@@ -1,0 +1,16 @@
+numpy==1.21.4
+sklearn==0.0
+transformers==4.19.4
+pathlib==1.0.1
+PyYAML==6.0
+scikit-learn==1.1.1
+torchvision==0.11.1+cu113
+tqdm==4.61.2
+torch==1.10.0+cu113
+pandas==1.4.2
+tensorboard==2.7.0
+tensorboard-data-server==0.6.1
+tensorboard-plugin-wit==1.8.0
+huggingface-hub==0.7.0
+requests==2.25.1
+scipy==1.8.1
