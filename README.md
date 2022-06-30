@@ -57,7 +57,7 @@ frame_input 通过 frame_dense 降维为 768 维，与 text_embedding 拼接
 
 ### 数据预处理
 
-对于提供的 title，osr，acr 前后各取128，文本拼接长度为 256  * 3 = 768
+对于提供的 title，osr，acr 前后各取64
 
 ### 模型训练
 
