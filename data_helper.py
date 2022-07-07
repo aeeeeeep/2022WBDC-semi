@@ -12,6 +12,8 @@ from transformers import BertTokenizer
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torchvision.transforms import Compose, Resize, CenterCrop, Normalize, ToTensor
+from sklearn.model_selection import train_test_split
+from collections import Counter
 
 from category_id_map import category_id_to_lv2id
 
@@ -19,9 +21,14 @@ from category_id_map import category_id_to_lv2id
 def create_dataloaders(args):
     dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
     size = len(dataset)
-    val_size = int(size * args.val_ratio)
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size],
-                                                               generator=torch.Generator().manual_seed(args.seed))
+    # val_size = int(size * args.val_ratio)
+    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size],
+    #                                                            generator=torch.Generator().manual_seed(args.seed))
+
+    train_indices, test_indices = train_test_split(list(range(len(dataset.labels))), test_size=args.val_ratio, random_state=2022, stratify=dataset.labels)
+    train_dataset, val_dataset = torch.utils.data.Subset(dataset, train_indices), torch.utils.data.Subset(dataset, test_indices)
+    resample(train_dataset)
+
 
     if args.num_workers > 0:
         dataloader_class = partial(DataLoader, pin_memory=True, num_workers=args.num_workers, prefetch_factor=args.prefetch)
@@ -67,6 +74,9 @@ class MultiModalDataset(Dataset):
             self.anns = json.load(f)
         # initialize the text tokenizer
         self.tokenizer = BertTokenizer.from_pretrained(args.bert_dir, use_fast=True, cache_dir=args.bert_cache)
+        self.labels = None
+        if not test_mode:
+            self.labels = [self.anns[idx]['category_id'] for idx in range(len(self.anns))]
 
         # we use the standard image transform as in the offifical Swin-Transformer.
         self.transform = Compose([
@@ -162,3 +172,23 @@ class MultiModalDataset(Dataset):
             data['label'] = torch.LongTensor([label])
 
         return data
+
+
+def resample(dataset):
+    anns = dataset.dataset.anns
+    indices = dataset.indices
+    labels = [line['category_id'] for line in anns]
+    label_cnt = Counter(labels)
+    indices_resample = []
+    for idx in indices:
+        if label_cnt[anns[idx]['category_id']] < 100:
+            indices_resample.extend([idx] * 5)
+        elif label_cnt[anns[idx]['category_id']] < 500:
+            indices_resample.extend([idx] * 3)
+        elif label_cnt[anns[idx]['category_id']] < 1000:
+            indices_resample.extend([idx] * 2)
+        else:
+            indices_resample.append(idx)
+
+    dataset.indices = indices_resample
+    print("trainset len:", len(dataset))

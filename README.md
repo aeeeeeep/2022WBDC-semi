@@ -8,6 +8,7 @@
 * SWA
 * text_input: title + ocr_text + asr_text
 * label smooth
+* Resample
 
 ### TODO
 
