@@ -30,15 +30,15 @@ class RawFrameDataset(Dataset):
             self.anns = json.load(f)
         self.zip_frame_dir = zip_frame_dir
         self.max_video_frames = max_video_frames
-        
+
         # we follow the common practice as in the ImageNet's preprocessing.
         self.transform = Compose([
-                Resize(256),
-                CenterCrop(224),
-                ToTensor(),
-                Normalize(mean=[0.485, 0.456, 0.406],
-                          std=[0.229, 0.224, 0.225]),
-            ])
+            Resize(256),
+            CenterCrop(224),
+            ToTensor(),
+            Normalize(mean=[0.485, 0.456, 0.406],
+                      std=[0.229, 0.224, 0.225]),
+        ])
 
     def __len__(self) -> dict:
         return len(self.anns)
@@ -95,7 +95,7 @@ def main():
     dataloader = DataLoader(dataset, batch_size=8, num_workers=24, shuffle=False, pin_memory=True, drop_last=False)
 
     assert not os.path.isfile(args.output_path), f"{args.output_path} already exists. " \
-                                                  "If you want to override it, please manually delete this file."
+                                                 "If you want to override it, please manually delete this file."
     output_handler = zipfile.ZipFile(args.output_path, 'w', compression=zipfile.ZIP_STORED)
 
     with torch.no_grad():
@@ -103,7 +103,7 @@ def main():
         for dataitem in dataloader:
             img, num_frames = dataitem['img'], dataitem['num_frames']
             B, L = img.shape[0:2]
-            img = img.view((B * L, ) + img.shape[2:])
+            img = img.view((B * L,) + img.shape[2:])
             feature = model(img)
             feature = feature.view(B, L, -1)
             feature = feature.cpu().numpy().astype(np.float16)

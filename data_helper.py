@@ -114,18 +114,39 @@ class MultiModalDataset(Dataset):
             frame[i] = img_tensor
         return frame, mask
 
-    def tokenize_text(self, text: str) -> tuple:
-        encoded_inputs = self.tokenizer(text, max_length=self.bert_seq_length, padding='max_length', truncation=True)
-        input_ids = torch.LongTensor(encoded_inputs['input_ids'])
-        mask = torch.LongTensor(encoded_inputs['attention_mask'])
-        return input_ids, mask
+    def tokenize_text(self, title: str, ocr_text: str, asr_text: str) -> tuple:
+        max_len = 128
+        if len(title) >= max_len:
+            title = title[:(int(max_len / 2))] + title[-(int(max_len / 2)):]
+        if len(ocr_text) >= max_len:
+            ocr_text = ocr_text[:(int(max_len / 2))] + ocr_text[-(int(max_len / 2)):]
+        if len(asr_text) >= max_len:
+            asr_text = asr_text[:(int(max_len / 2))] + asr_text[-(int(max_len / 2)):]
+
+        encoded_title = self.tokenizer(title, max_length=max_len, padding='max_length', truncation=True)
+        encoded_ocr = self.tokenizer(ocr_text, max_length=max_len, padding='max_length', truncation=True)
+        encoded_asr = self.tokenizer(asr_text, max_length=max_len, padding='max_length', truncation=True)
+
+        text_input_ids = torch.LongTensor(
+            [self.tokenizer.cls_token_id] + encoded_title['input_ids'] + [self.tokenizer.sep_token_id]
+            + encoded_ocr['input_ids'] + [self.tokenizer.sep_token_id] + encoded_asr['input_ids']
+            + [self.tokenizer.sep_token_id]
+        )
+        text_mask = torch.LongTensor(
+            [1, ] + encoded_title['attention_mask'] + [1, ] + encoded_ocr['attention_mask'] + [1, ]
+            + encoded_asr['attention_mask'] + [1, ]
+        )
+        return text_input_ids, text_mask
 
     def __getitem__(self, idx: int) -> dict:
         # Step 1, load visual features from zipfile.
         frame_input, frame_mask = self.get_visual_frames(idx)
 
         # Step 2, load title tokens
-        title_input, title_mask = self.tokenize_text(self.anns[idx]['title'])
+        title, asr = self.anns[idx]['title'], self.anns[idx]['asr']
+        ocr = sorted(self.anns[idx]['ocr'], key=lambda x: x['time'])
+        ocr = ','.join([t['text'] for t in ocr])
+        title_input, title_mask = self.tokenize_text(title, ocr, asr)
 
         # Step 3, summarize into a dictionary
         data = dict(

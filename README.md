@@ -1,3 +1,20 @@
+## 工作清单
+
+### Finish
+
+* PGD
+* EMA
+* R-Drop
+* SWA
+* text_input: title + ocr_text + asr_text
+* label smooth
+
+### TODO
+
+* 预训练: mlm + itm
+* swin 换 cswin
+* 双流 albert
+
 ## [2022中国高校计算机大赛-微信大数据挑战赛](https://algo.weixin.qq.com/)
 
 ### 赛题介绍

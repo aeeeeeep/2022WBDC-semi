@@ -18,6 +18,8 @@ class MultiModal(nn.Module):
         bert_output_size = 768
         self.fusion = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio, args.dropout)
         self.classifier = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
+        # self.ce = torch.nn.CrossEntropyLoss()
+        self.kld = torch.nn.KLDivLoss(reduction="none")
 
     def forward(self, inputs, inference=False):
         inputs['frame_input'] = self.visual_backbone(inputs['frame_input'])
@@ -32,16 +34,31 @@ class MultiModal(nn.Module):
         if inference:
             return torch.argmax(prediction, dim=1)
         else:
-            return self.cal_loss(prediction, inputs['label'])
+            #return self.cal_loss(prediction, inputs['label'])
+            return self.loss_fnc(self, prediction, inputs['label'])
 
     @staticmethod
     def cal_loss(prediction, label):
         label = label.squeeze(dim=1)
-        loss = F.cross_entropy(prediction, label)
+        loss = F.cross_entropy(prediction, label, label_smoothing=0.1)
         with torch.no_grad():
             pred_label_id = torch.argmax(prediction, dim=1)
             accuracy = (label == pred_label_id).float().sum() / label.shape[0]
         return loss, accuracy, pred_label_id, label
+
+    @staticmethod
+    def loss_fnc(self, prediction, label, alpha=4):
+        """配合R-Drop的交叉熵损失
+            """
+        # loss1 = self.ce(prediction, label)
+        label = label.squeeze(dim=1)
+        loss1 = F.cross_entropy(prediction, label, label_smoothing=0.1)
+        loss2 = self.kld(torch.log_softmax(prediction[::2], dim=1), prediction[1::2].softmax(dim=-1)) + \
+                self.kld(torch.log_softmax(prediction[1::2], dim=1), prediction[::2].softmax(dim=-1))
+        with torch.no_grad():
+            pred_label_id = torch.argmax(prediction, dim=1)
+            accuracy = (label == pred_label_id).float().sum() / label.shape[0]
+        return loss1 + torch.mean(loss2) / 4 * alpha, accuracy, pred_label_id, label
 
 
 class NeXtVLAD(nn.Module):

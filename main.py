@@ -2,11 +2,14 @@ import logging
 import os
 import time
 import torch
-
+import copy
 from model import MultiModal
 from config import parse_args
 from data_helper import create_dataloaders
 from util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
+from pgd import PGD
+from ema import EMA
+from swa import swa
 
 
 def validate(model, val_dataloader):
@@ -34,6 +37,15 @@ def train_and_validate(args):
 
     # 2. build model and optimizers
     model = MultiModal(args)
+
+    swa_raw_model = copy.deepcopy(model)
+
+    ema = EMA(model, 0.999, device=args.device)
+    ema.register()
+
+    pgd = PGD(model)
+    K = 3
+
     optimizer, scheduler = build_optimizer(args, model)
     if args.device == 'cuda':
         model = torch.nn.parallel.DataParallel(model.to(args.device))
@@ -50,7 +62,21 @@ def train_and_validate(args):
             loss = loss.mean()
             accuracy = accuracy.mean()
             loss.backward()
+
+            pgd.backup_grad()
+            for t in range(K):
+                pgd.attack(is_first_attack=(t == 0))
+                if t != K - 1:
+                    model.zero_grad()
+                else:
+                    pgd.restore_grad()
+                adv_loss, _, _, _ = model(inputs=batch)
+                adv_loss = adv_loss.mean()
+                adv_loss.backward()
+            pgd.restore()
+
             optimizer.step()
+            ema.update()
             optimizer.zero_grad()
             scheduler.step()
 
@@ -59,7 +85,10 @@ def train_and_validate(args):
                 time_per_step = (time.time() - start_time) / max(1, step)
                 remaining_time = time_per_step * (num_total_steps - step)
                 remaining_time = time.strftime('%H:%M:%S', time.gmtime(remaining_time))
-                logging.info(f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+                logging.info(
+                    f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+
+        ema.apply_shadow()
 
         # 4. validation
         loss, results = validate(model, val_dataloader)
@@ -73,6 +102,8 @@ def train_and_validate(args):
             state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
             torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
                        f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
+        ema.restore()
+    swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
 
 
 def main():
