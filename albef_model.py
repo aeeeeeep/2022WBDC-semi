@@ -17,10 +17,10 @@ class ALBEF(nn.Module):
     def __init__(self, args):
         super().__init__()
 
-        self.bert = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+        # self.bert = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
         self.distill = False
 
-        # self.visual_encoder = VisionTransformer(
+        # self.visual_backbone = VisionTransformer(
         #     img_size=config['image_res'], patch_size=16, embed_dim=768, depth=12, num_heads=12,
         #     mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))
         self.visual_backbone = swin_tiny(args.swin_pretrained_path)
@@ -39,7 +39,7 @@ class ALBEF(nn.Module):
         )
 
         if self.distill:
-            self.visual_backbone = swin_tiny(args.swin_pretrained_path)
+            self.visual_backbone_m = swin_tiny(args.swin_pretrained_path)
             self.video_dense = nn.Linear(768, 768)
             self.text_encoder_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
             self.cls_head_m = nn.Sequential(
@@ -48,23 +48,24 @@ class ALBEF(nn.Module):
                 nn.Linear(self.text_encoder.config.hidden_size, len(CATEGORY_ID_LIST))
             )
 
-            self.model_pairs = [[self.visual_encoder, self.visual_encoder_m],
+            self.model_pairs = [[self.visual_backbone, self.visual_backbone_m],
                                 [self.text_encoder, self.text_encoder_m],
                                 [self.cls_head, self.cls_head_m],
                                 ]
             self.copy_params()
             self.momentum = 0.995
 
-    def forward(self, frame_input, frame_mask, text_input, text_mask, text_token_type_ids, label, alpha=0.4, train=True):
-        bert_embedding = self.bert(text_input, text_mask)['pooler_output']
-        frame_input = self.visual_backbone(frame_input)
-        frame_input = self.video_dense(frame_input)
-        frame_emb = self.embeddings(inputs_embeds=frame_input)
-        # frame_emb = self.visual_encoder(frame_input)
-        frame_atts = torch.ones(frame_emb.size()[:-1], dtype=torch.long).to(frame_input.device)
+    def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, train=True):
+        # bert_embedding = self.bert(text_input, text_mask)['pooler_output']
+        # text_emb = self.text_encoder(text_input, text_mask)['pooler_output']
+        frame_input_ = self.visual_backbone(frame_input)
+        frame_input_ = self.video_dense(frame_input_)
+        frame_emb = self.embeddings(inputs_embeds=frame_input_)
+        # frame_emb = self.visual_backbone(frame_input_)
+        frame_atts = torch.ones(frame_emb.size()[:-1], dtype=torch.long).to(frame_input_.device)
 
         if train:
-            output = self.text_encoder(text_token_type_ids,
+            output = self.text_encoder(text_input,
                                        attention_mask=text_mask,
                                        encoder_hidden_states=frame_emb,
                                        encoder_attention_mask=frame_atts,
@@ -74,8 +75,8 @@ class ALBEF(nn.Module):
             if self.distill:
                 with torch.no_grad():
                     self._momentum_update()
-                    frame_emb_m = self.visual_encoder_m(frame_input)
-                    output_m = self.text_encoder_m(text_token_type_ids,
+                    frame_emb_m = self.visual_backbone_m(frame_input)
+                    output_m = self.text_encoder_m(text_input,
                                                    attention_mask=text_mask,
                                                    encoder_hidden_states=frame_emb_m,
                                                    encoder_attention_mask=frame_atts,
@@ -83,6 +84,7 @@ class ALBEF(nn.Module):
                                                    )
                     prediction_m = self.cls_head_m(output_m.last_hidden_state[:, 0, :])
 
+                label = label.squeeze(dim=1)
                 loss = (1 - alpha) * F.cross_entropy(prediction, label, label_smoothing=0.1) - alpha * torch.sum(
                     F.log_softmax(prediction, dim=1) * F.softmax(prediction_m, dim=1), dim=1).mean()
                 return loss
@@ -90,7 +92,7 @@ class ALBEF(nn.Module):
                 return self.cal_loss(prediction, label)
 
         else:
-            output = self.text_encoder(text_token_type_ids,
+            output = self.text_encoder(text_input,
                                        attention_mask=text_mask,
                                        encoder_hidden_states=frame_emb,
                                        encoder_attention_mask=frame_atts,

@@ -146,8 +146,8 @@ class MultiModalDataset(Dataset):
             [1, ] + encoded_title['attention_mask'] + [1, ] + encoded_ocr['attention_mask'] + [1, ]
             + encoded_asr['attention_mask'] + [1, ]
         )
-        text_token_type_ids = torch.zeros_like(text_input_ids)
-        return text_input_ids, text_mask, text_token_type_ids
+        # text_token_type_ids = torch.zeros_like(text_input_ids)
+        return text_input_ids, text_mask #, text_token_type_ids
 
     def __getitem__(self, idx: int) -> dict:
         # Step 1, load visual features from zipfile.
@@ -157,7 +157,7 @@ class MultiModalDataset(Dataset):
         title, asr = self.anns[idx]['title'], self.anns[idx]['asr']
         ocr = sorted(self.anns[idx]['ocr'], key=lambda x: x['time'])
         ocr = ','.join([t['text'] for t in ocr])
-        title_input, title_mask, title_token_type_ids = self.tokenize_text(title, ocr, asr)
+        title_input, title_mask = self.tokenize_text(title, ocr, asr)
 
         # Step 3, summarize into a dictionary
         data = dict(
@@ -165,7 +165,7 @@ class MultiModalDataset(Dataset):
             frame_mask=frame_mask,
             title_input=title_input,
             title_mask=title_mask,
-            title_token_type_ids=title_token_type_ids
+            # title_token_type_ids=title_token_type_ids
         )
 
         # Step 4, load label if not test mode

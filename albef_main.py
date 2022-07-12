@@ -58,7 +58,7 @@ def train_and_validate(args):
     for epoch in range(args.max_epochs):
         for batch in train_dataloader:
             model.train()
-            loss, accuracy, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['title_token_type_ids'],batch['label'])
+            loss, accuracy, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
             loss = loss.mean()
             accuracy = accuracy.mean()
             loss.backward()
@@ -70,7 +70,7 @@ def train_and_validate(args):
                     model.zero_grad()
                 else:
                     pgd.restore_grad()
-                adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['title_token_type_ids'],batch['label'])
+                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
                 adv_loss = adv_loss.mean()
                 adv_loss.backward()
             pgd.restore()
