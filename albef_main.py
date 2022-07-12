@@ -19,7 +19,8 @@ def validate(model, val_dataloader):
     losses = []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch)
+            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+
             loss = loss.mean()
             predictions.extend(pred_label_id.cpu().numpy())
             labels.extend(label.cpu().numpy())
