@@ -15,6 +15,7 @@
 
 * 预训练: mlm + itm
 * swin 换 cswin
+* PIL 换 opencv
 
 ## [2022中国高校计算机大赛-微信大数据挑战赛](https://algo.weixin.qq.com/)
 
