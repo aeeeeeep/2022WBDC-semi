@@ -72,13 +72,13 @@ class MultiModalDataset(Dataset):
         # load annotations
         with open(ann_path, 'r', encoding='utf8') as f:
             self.anns = json.load(f)
-        # initialize the text tokenizer
+        # initialize the text_input tokenizer
         self.tokenizer = BertTokenizer.from_pretrained(args.bert_dir, use_fast=True, cache_dir=args.bert_cache)
         self.labels = None
         if not test_mode:
             self.labels = [self.anns[idx]['category_id'] for idx in range(len(self.anns))]
 
-        # we use the standard image transform as in the offifical Swin-Transformer.
+        # we use the standard frame_input transform as in the offifical Swin-Transformer.
         self.transform = Compose([
             Resize(256),
             CenterCrop(224),
@@ -146,7 +146,8 @@ class MultiModalDataset(Dataset):
             [1, ] + encoded_title['attention_mask'] + [1, ] + encoded_ocr['attention_mask'] + [1, ]
             + encoded_asr['attention_mask'] + [1, ]
         )
-        return text_input_ids, text_mask
+        text_token_type_ids = torch.zeros_like(text_input_ids)
+        return text_input_ids, text_mask, text_token_type_ids
 
     def __getitem__(self, idx: int) -> dict:
         # Step 1, load visual features from zipfile.
@@ -156,14 +157,15 @@ class MultiModalDataset(Dataset):
         title, asr = self.anns[idx]['title'], self.anns[idx]['asr']
         ocr = sorted(self.anns[idx]['ocr'], key=lambda x: x['time'])
         ocr = ','.join([t['text'] for t in ocr])
-        title_input, title_mask = self.tokenize_text(title, ocr, asr)
+        title_input, title_mask, title_token_type_ids = self.tokenize_text(title, ocr, asr)
 
         # Step 3, summarize into a dictionary
         data = dict(
             frame_input=frame_input,
             frame_mask=frame_mask,
             title_input=title_input,
-            title_mask=title_mask
+            title_mask=title_mask,
+            title_token_type_ids=title_token_type_ids
         )
 
         # Step 4, load label if not test mode

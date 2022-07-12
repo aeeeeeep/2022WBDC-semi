@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument('--test_zip_frames', type=str, default='/opt/ml/input/data/zip_frames/test/')
     parser.add_argument('--test_output_csv', type=str, default='/opt/ml/output/result.csv')
     parser.add_argument('--val_ratio', default=0.1, type=float, help='split 10 percentages of training data as validation')
-    parser.add_argument('--batch_size', default=32, type=int, help="use for training duration per worker")
+    parser.add_argument('--batch_size', default=20, type=int, help="use for training duration per worker")
     parser.add_argument('--val_batch_size', default=50, type=int, help="use for validation duration per worker")
     parser.add_argument('--test_batch_size', default=50, type=int, help="use for testing duration per worker")
     parser.add_argument('--prefetch', default=16, type=int, help="use for training duration per worker")

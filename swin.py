@@ -53,8 +53,8 @@ def window_reverse(windows, window_size, H, W):
     Args:
         windows: (num_windows*B, window_size, window_size, C)
         window_size (int): Window size
-        H (int): Height of image
-        W (int): Width of image
+        H (int): Height of frame_input
+        W (int): Width of frame_input
 
     Returns:
         x: (B, H, W, C)
@@ -416,7 +416,7 @@ class PatchEmbed(nn.Module):
     Args:
         img_size (int): Image size.  Default: 224.
         patch_size (int): Patch token size. Default: 4.
-        in_chans (int): Number of input image channels. Default: 3.
+        in_chans (int): Number of input frame_input channels. Default: 3.
         embed_dim (int): Number of linear projection output channels. Default: 96.
         norm_layer (nn.Module, optional): Normalization layer. Default: None
     """
@@ -444,7 +444,7 @@ class PatchEmbed(nn.Module):
         B, C, H, W = x.shape
         # FIXME look at relaxing size constraints
         assert H == self.img_size[0] and W == self.img_size[1], \
-            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+            f"Input frame_input size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
         x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
         if self.norm is not None:
             x = self.norm(x)
@@ -464,9 +464,9 @@ class SwinTransformer(nn.Module):
           https://arxiv.org/pdf/2103.14030
 
     Args:
-        img_size (int | tuple(int)): Input image size. Default 224
+        img_size (int | tuple(int)): Input frame_input size. Default 224
         patch_size (int | tuple(int)): Patch size. Default: 4
-        in_chans (int): Number of input image channels. Default: 3
+        in_chans (int): Number of input frame_input channels. Default: 3
         num_classes (int): Number of classes for classification head. Default: 1000
         embed_dim (int): Patch embedding dimension. Default: 96
         depths (tuple(int)): Depth of each Swin Transformer layer.
@@ -500,7 +500,7 @@ class SwinTransformer(nn.Module):
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.mlp_ratio = mlp_ratio
 
-        # split image into non-overlapping patches
+        # split frame_input into non-overlapping patches
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
