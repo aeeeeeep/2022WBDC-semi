@@ -6,8 +6,9 @@ import torch.nn.functional as F
 
 
 from swin import swin_tiny
+# from cswin import CSWin_64_12211_tiny_224
 from category_id_map import CATEGORY_ID_LIST
-from transformers import BertModel, BertConfig
+# from transformers import BertModel, BertConfig, BertTokenizer
 from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertEmbeddings, BertEncoder
 import yaml
 from functools import partial
@@ -16,72 +17,44 @@ from functools import partial
 class ALBEF(nn.Module):
     def __init__(self, args):
         super().__init__()
-
-        # self.bert = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
         self.distill = False
-
-        # self.visual_backbone = VisionTransformer(
-        #     img_size=config['image_res'], patch_size=16, embed_dim=768, depth=12, num_heads=12,
-        #     mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))
-        self.visual_backbone = swin_tiny(args.swin_pretrained_path)
-        self.video_dense = nn.Linear(768, 768)
-        # config = json.loads('./config.json')
-        with open("./config.json", 'r') as load_f:
-            config = json.load(load_f)
-        config = Dict2Obj(config)
-        self.embeddings = BertEmbeddings(config)
-        self.text_encoder = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
-
+        self.bert = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+        # self.mean_pooling = MeanPooling()
+        self.drop = nn.Dropout(p=0.2)
         self.cls_head = nn.Sequential(
-            nn.Linear(self.text_encoder.config.hidden_size, self.text_encoder.config.hidden_size),
+            nn.Linear(768, 768),
             nn.ReLU(),
-            nn.Linear(self.text_encoder.config.hidden_size, len(CATEGORY_ID_LIST))
+            nn.Linear(768, len(CATEGORY_ID_LIST))
         )
 
         if self.distill:
-            self.visual_backbone_m = swin_tiny(args.swin_pretrained_path)
-            self.video_dense = nn.Linear(768, 768)
-            self.text_encoder_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+            self.bert_m = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+            # self.mean_pooling_m = MeanPooling()
+            self.drop_m = nn.Dropout(p=0.2)
             self.cls_head_m = nn.Sequential(
-                nn.Linear(self.text_encoder.config.hidden_size, self.text_encoder.config.hidden_size),
+                nn.Linear(768, 768),
                 nn.ReLU(),
-                nn.Linear(self.text_encoder.config.hidden_size, len(CATEGORY_ID_LIST))
+                nn.Linear(768, len(CATEGORY_ID_LIST))
             )
 
-            self.model_pairs = [[self.visual_backbone, self.visual_backbone_m],
-                                [self.text_encoder, self.text_encoder_m],
+            self.model_pairs = [[self.bert, self.bert_m],
                                 [self.cls_head, self.cls_head_m],
                                 ]
             self.copy_params()
             self.momentum = 0.995
 
     def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, train=True):
-        # bert_embedding = self.bert(text_input, text_mask)['pooler_output']
-        # text_emb = self.text_encoder(text_input, text_mask)['pooler_output']
-        frame_input_ = self.visual_backbone(frame_input)
-        frame_input_ = self.video_dense(frame_input_)
-        frame_emb = self.embeddings(inputs_embeds=frame_input_)
-        # frame_emb = self.visual_backbone(frame_input_)
-        frame_atts = torch.ones(frame_emb.size()[:-1], dtype=torch.long).to(frame_input_.device)
-
         if train:
-            output = self.text_encoder(text_input,
-                                       attention_mask=text_mask,
-                                       encoder_hidden_states=frame_emb,
-                                       encoder_attention_mask=frame_atts,
-                                       return_dict=True
-                                       )
-            prediction = self.cls_head(output.last_hidden_state[:, 0, :])
+            encoder_outputs, mask = self.bert(frame_input, frame_mask, text_input, text_mask)
+            output = torch.einsum("bsh,bs,b->bh", encoder_outputs, mask.float(), 1 / mask.float().sum(dim=1) + 1e-9)
+            output = self.drop(output)
+            prediction = self.cls_head(output)
             if self.distill:
                 with torch.no_grad():
                     self._momentum_update()
-                    frame_emb_m = self.visual_backbone_m(frame_input)
-                    output_m = self.text_encoder_m(text_input,
-                                                   attention_mask=text_mask,
-                                                   encoder_hidden_states=frame_emb_m,
-                                                   encoder_attention_mask=frame_atts,
-                                                   return_dict=True
-                                                   )
+                    encoder_outputs_m, mask_m = self.bert_m(frame_input, frame_mask, text_input, text_mask)
+                    output_m = torch.einsum("bsh,bs,b->bh", encoder_outputs_m, mask_m.float(), 1 / mask_m.float().sum(dim=1) + 1e-9)
+                    output_m = self.drop_m(output_m)
                     prediction_m = self.cls_head_m(output_m.last_hidden_state[:, 0, :])
 
                 label = label.squeeze(dim=1)
@@ -92,13 +65,10 @@ class ALBEF(nn.Module):
                 return self.cal_loss(prediction, label)
 
         else:
-            output = self.text_encoder(text_input,
-                                       attention_mask=text_mask,
-                                       encoder_hidden_states=frame_emb,
-                                       encoder_attention_mask=frame_atts,
-                                       return_dict=True
-                                       )
-            prediction = self.cls_head(output.last_hidden_state[:, 0, :])
+            encoder_outputs, mask = self.bert(frame_input, frame_mask, text_input, text_mask)
+            output = torch.einsum("bsh,bs,b->bh", encoder_outputs, mask.float(), 1 / mask.float().sum(dim=1) + 1e-9)
+            output = self.drop(output)
+            prediction = self.cls_head(output)
             return torch.argmax(prediction, dim=1)
 
     @torch.no_grad()
@@ -123,37 +93,18 @@ class ALBEF(nn.Module):
             accuracy = (label == pred_label_id).float().sum() / label.shape[0]
         return loss, accuracy, pred_label_id, label
 
-class SENet(nn.Module):
-    def __init__(self, channels, ratio=8):
-        super().__init__()
-        self.sequeeze = nn.Linear(in_features=channels, out_features=channels // ratio, bias=False)
-        self.relu = nn.ReLU()
-        self.excitation = nn.Linear(in_features=channels // ratio, out_features=channels, bias=False)
-        self.sigmoid = nn.Sigmoid()
+class MeanPooling(nn.Module):
+    def __init__(self):
+        super(MeanPooling, self).__init__()
 
-    def forward(self, x):
-        gates = self.sequeeze(x)
-        gates = self.relu(gates)
-        gates = self.excitation(gates)
-        gates = self.sigmoid(gates)
-        x = torch.mul(x, gates)
+    def forward(self, last_hidden_state, attention_mask):
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+        sum_mask = input_mask_expanded.sum(1)
+        sum_mask = torch.clamp(sum_mask, min=1e-9)
+        mean_embeddings = sum_embeddings / sum_mask
+        return mean_embeddings
 
-        return x
-
-class ConcatDenseSE(nn.Module):
-    def __init__(self, multimodal_hidden_size, hidden_size, se_ratio, dropout):
-        super().__init__()
-        self.fusion = nn.Linear(multimodal_hidden_size, hidden_size)
-        self.fusion_dropout = nn.Dropout(dropout)
-        self.enhance = SENet(channels=hidden_size, ratio=se_ratio)
-
-    def forward(self, inputs):
-        embeddings = torch.cat(inputs, dim=1)
-        embeddings = self.fusion_dropout(embeddings)
-        embedding = self.fusion(embeddings)
-        embedding = self.enhance(embedding)
-
-        return embedding
 
 class Dict2Obj(dict):
 
@@ -166,3 +117,55 @@ class Dict2Obj(dict):
             if isinstance(value,dict):
                 value = Dict2Obj(value)
             return value
+
+class Bert_encoder(BertPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+
+        self.embeddings = BertEmbeddings(config)
+
+        self.visual_backbone = swin_tiny('opensource_models/swin_tiny_patch4_window7_224.pth')
+        self.video_dense = nn.Linear(768, 768)
+        # self.video_activation = nn.Tanh()
+        # self.video_embeddings = BertEmbeddings(config)
+        # self.video_embeddings = self.embeddings
+
+        self.encoder = BertEncoder(config)
+
+        self.init_weights()
+
+    def get_input_embeddings(self):
+        return self.embeddings.word_embeddings
+
+    def set_input_embeddings(self, value):
+        self.embeddings.word_embeddings = value
+
+    def _prune_heads(self, heads_to_prune):
+        for layer, heads in heads_to_prune.items():
+            self.encoder.layer[layer].attention.prune_heads(heads)
+
+    def forward(self, frame_input, frame_mask, text_input, text_mask):
+
+        text_emb = self.embeddings(input_ids=text_input)
+        # text input is [CLS][SEP] t e x t [SEP]
+        cls_emb = text_emb[:, 0:1, :]
+        text_emb = text_emb[:, 1:, :]
+
+        cls_mask = text_mask[:, 0:1]
+        text_mask = text_mask[:, 1:]
+
+        frame_input_ = self.visual_backbone(frame_input)
+        frame_input_ = self.video_dense(frame_input_)
+        frame_emb = self.embeddings(inputs_embeds=frame_input_)
+        # frame_input = self.video_activation(frame_input)
+
+        # [CLS] Video [SEP] Text [SEP]
+        embedding_output = torch.cat([cls_emb, frame_emb, text_emb], 1)
+
+        mask = torch.cat([cls_mask, frame_mask, text_mask], 1)
+        extended_mask = mask[:, None, None, :]
+        extended_mask = (1.0 - extended_mask) * -10000.0
+
+        encoder_outputs = self.encoder(embedding_output, attention_mask=extended_mask)['last_hidden_state']
+        return encoder_outputs, mask

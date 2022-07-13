@@ -37,6 +37,8 @@ def parse_args():
 
     # ========================== Swin ===================================
     parser.add_argument('--swin_pretrained_path', type=str, default='opensource_models/swin_tiny_patch4_window7_224.pth')
+    parser.add_argument('--cswin_pretrained_path', type=str, default='opensource_models/cswin_tiny_224.pth')
+
 
     # ========================== Title BERT =============================
     parser.add_argument('--bert_dir', type=str, default='opensource_models/chinese-roberta-wwm-ext')

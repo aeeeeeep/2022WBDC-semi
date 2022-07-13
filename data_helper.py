@@ -6,6 +6,7 @@ import zipfile
 import torch
 
 from PIL import Image
+# import cv2
 from io import BytesIO
 from functools import partial
 from transformers import BertTokenizer
@@ -27,7 +28,7 @@ def create_dataloaders(args):
 
     train_indices, test_indices = train_test_split(list(range(len(dataset.labels))), test_size=args.val_ratio, random_state=2022, stratify=dataset.labels)
     train_dataset, val_dataset = torch.utils.data.Subset(dataset, train_indices), torch.utils.data.Subset(dataset, test_indices)
-    resample(train_dataset)
+    # resample(train_dataset)
 
 
     if args.num_workers > 0:
@@ -119,6 +120,7 @@ class MultiModalDataset(Dataset):
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
+            # img = cv2.imdecode(BytesIO(img_content), cv2.IMREAD_UNCHANGED)
             img = Image.open(BytesIO(img_content))
             img_tensor = self.transform(img)
             frame[i] = img_tensor
