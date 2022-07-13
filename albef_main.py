@@ -7,7 +7,7 @@ from albef_model import ALBEF
 from config import parse_args
 from data_helper import create_dataloaders
 from util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
-from pgd import PGD
+from fgm import FGM
 from ema import EMA
 from swa import swa
 
@@ -19,7 +19,7 @@ def validate(model, val_dataloader):
     losses = []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],torch.ones([32, 1]).to(torch.Tensor()).to("cuda"),train=False)
+            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
             loss = loss.mean()
             predictions.extend(pred_label_id.cpu().numpy())
             labels.extend(label.cpu().numpy())
@@ -43,8 +43,9 @@ def train_and_validate(args):
     ema = EMA(model, 0.999, device=args.device)
     ema.register()
 
-    pgd = PGD(model)
-    K = 3
+    # pgd = PGD(model)
+    # K = 3
+    fgm = FGM(model)
 
     optimizer, scheduler = build_optimizer(args, model)
     if args.device == 'cuda':
@@ -55,6 +56,7 @@ def train_and_validate(args):
     best_score = args.best_score
     start_time = time.time()
     num_total_steps = len(train_dataloader) * args.max_epochs
+
     for epoch in range(args.max_epochs):
         for batch in train_dataloader:
             model.train()
@@ -63,17 +65,24 @@ def train_and_validate(args):
             accuracy = accuracy.mean()
             loss.backward()
 
-            pgd.backup_grad()
-            for t in range(K):
-                pgd.attack(is_first_attack=(t == 0))
-                if t != K - 1:
-                    model.zero_grad()
-                else:
-                    pgd.restore_grad()
-                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
-                adv_loss = adv_loss.mean()
-                adv_loss.backward()
-            pgd.restore()
+            '''fgm'''
+            fgm.attack()  # 在embedding上添加对抗扰动
+            adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
+            adv_loss = adv_loss.mean()
+            adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
+            fgm.restore()  # 恢复embedding参数
+            '''pgd'''
+            # pgd.backup_grad()
+            # for t in range(K):
+            #     pgd.attack(is_first_attack=(t == 0))
+            #     if t != K - 1:
+            #         model.zero_grad()
+            #     else:
+            #         pgd.restore_grad()
+            #     adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
+            #     adv_loss = adv_loss.mean()
+            #     adv_loss.backward()
+            # pgd.restore()
 
             optimizer.step()
             ema.update()
@@ -81,19 +90,23 @@ def train_and_validate(args):
             scheduler.step()
 
             step += 1
-            if step % args.print_steps == 0:
-                time_per_step = (time.time() - start_time) / max(1, step)
-                remaining_time = time_per_step * (num_total_steps - step)
-                remaining_time = time.strftime('%H:%M:%S', time.gmtime(remaining_time))
-                logging.info(
-                    f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+            # if step % args.print_steps == 0:
+            #     time_per_step = (time.time() - start_time) / max(1, step)
+            #     remaining_time = time_per_step * (num_total_steps - step)
+            #     remaining_time = time.strftime('%D:%H:%M:%S', time.gmtime(remaining_time))
+            #     logging.info(
+            #         f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+
+        logging.info(f"Train: Epoch {epoch} : loss {loss:.3f}, "
+                     # f"train_acc {train_acc:.3f}")
+                     f"adv_loss {adv_loss:.3f}, accuracy {accuracy:.3f}")
 
         ema.apply_shadow()
 
         # 4. validation
         loss, results = validate(model, val_dataloader)
         results = {k: round(v, 4) for k, v in results.items()}
-        logging.info(f"Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
+        logging.info(f"Validate: Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
 
         # 5. save checkpoint
         mean_f1 = results['mean_f1']
