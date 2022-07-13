@@ -17,7 +17,7 @@ from functools import partial
 class ALBEF(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.distill = False
+        self.distill = True
         self.bert = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
         # self.mean_pooling = MeanPooling()
         self.drop = nn.Dropout(p=0.2)
@@ -55,12 +55,14 @@ class ALBEF(nn.Module):
                     encoder_outputs_m, mask_m = self.bert_m(frame_input, frame_mask, text_input, text_mask)
                     output_m = torch.einsum("bsh,bs,b->bh", encoder_outputs_m, mask_m.float(), 1 / mask_m.float().sum(dim=1) + 1e-9)
                     output_m = self.drop_m(output_m)
-                    prediction_m = self.cls_head_m(output_m.last_hidden_state[:, 0, :])
+                    prediction_m = self.cls_head_m(output_m)
 
                 label = label.squeeze(dim=1)
                 loss = (1 - alpha) * F.cross_entropy(prediction, label, label_smoothing=0.1) - alpha * torch.sum(
                     F.log_softmax(prediction, dim=1) * F.softmax(prediction_m, dim=1), dim=1).mean()
-                return loss
+                pred_label_id = torch.argmax(prediction, dim=1)
+                accuracy = (label == pred_label_id).float().sum() / label.shape[0]
+                return loss, accuracy, pred_label_id, label
             else:
                 return self.cal_loss(prediction, label)
 

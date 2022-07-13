@@ -104,19 +104,22 @@ class MultiModalDataset(Dataset):
             # load all frame
             select_inds = list(range(num_frames))
         else:
+            step = num_frames // self.max_frame
+            select_inds = list(range(0, num_frames, step))
+            select_inds = select_inds[:self.max_frame]
             # if the number of frames exceeds the limitation, we need to sample
             # the frames.
-            if self.test_mode:
-                # uniformly sample when test mode is True
-                step = num_frames // self.max_frame
-                select_inds = list(range(0, num_frames, step))
-                select_inds = select_inds[:self.max_frame]
-            else:
-                # randomly sample when test mode is False
-                select_inds = list(range(num_frames))
-                random.shuffle(select_inds)
-                select_inds = select_inds[:self.max_frame]
-                select_inds = sorted(select_inds)
+            # if self.test_mode:
+            #     # uniformly sample when test mode is True
+            #     step = num_frames // self.max_frame
+            #     select_inds = list(range(0, num_frames, step))
+            #     select_inds = select_inds[:self.max_frame]
+            # else:
+            #     # randomly sample when test mode is False
+            #     select_inds = list(range(num_frames))
+            #     random.shuffle(select_inds)
+            #     select_inds = select_inds[:self.max_frame]
+            #     select_inds = sorted(select_inds)
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
