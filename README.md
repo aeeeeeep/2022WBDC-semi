@@ -2,20 +2,20 @@
 
 ### Finish
 
-* PGD
+* FGM
 * EMA
-* R-Drop
-* SWA
 * text_input: title + ocr_text + asr_text
 * label smooth
 * Resample
 * 双流 albert
+* PIL 换 opencv
 
 ### TODO
 
 * 预训练: mlm + itm
 * swin 换 cswin
-* PIL 换 opencv
+* torch 2 onnx 2 trt
+* 调参
 
 ## [2022中国高校计算机大赛-微信大数据挑战赛](https://algo.weixin.qq.com/)
 
