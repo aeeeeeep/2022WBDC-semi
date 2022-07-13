@@ -4,9 +4,9 @@ import zipfile
 import random
 import zipfile
 import torch
-
-from PIL import Image
-# import cv2
+import numpy as np
+# from PIL import Image
+import cv2
 from io import BytesIO
 from functools import partial
 from transformers import BertTokenizer
@@ -123,8 +123,10 @@ class MultiModalDataset(Dataset):
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
-            # img = cv2.imdecode(BytesIO(img_content), cv2.IMREAD_UNCHANGED)
-            img = Image.open(BytesIO(img_content))
+            # img = Image.open(BytesIO(img_content))
+            img_stream = BytesIO(img_content)
+            img = cv2.imdecode(np.frombuffer(img_stream.read(), np.uint8), 1)
+
             img_tensor = self.transform(img)
             frame[i] = img_tensor
         return frame, mask
@@ -189,11 +191,11 @@ def resample(dataset):
     indices_resample = []
     for idx in indices:
         if label_cnt[anns[idx]['category_id']] < 100:
-            indices_resample.extend([idx] * 5)
+            indices_resample.extend([idx] * 4)
         elif label_cnt[anns[idx]['category_id']] < 500:
-            indices_resample.extend([idx] * 3)
-        elif label_cnt[anns[idx]['category_id']] < 1000:
             indices_resample.extend([idx] * 2)
+        # elif label_cnt[anns[idx]['category_id']] < 1000:
+        #     indices_resample.extend([idx] * 2)
         else:
             indices_resample.append(idx)
 
