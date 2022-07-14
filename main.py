@@ -2,16 +2,16 @@ import logging
 import os
 import time
 import torch
-import copy
+# import copy
+from tqdm import tqdm
 from model import MultiModal
 from config import parse_args
 from data_helper import create_dataloaders
 from util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
-from pgd import PGD
+# from pgd import PGD
 from fgm import FGM
 from ema import EMA
-from swa import swa
-
+# from swa import swa
 
 def validate(model, val_dataloader):
     model.eval()
@@ -33,13 +33,22 @@ def validate(model, val_dataloader):
 
 
 def train_and_validate(args):
+    # # 为这个进程指定GPU
+    # torch.cuda.set_device(args.local_rank)
+    # # 初始化GPU通信方式NCLL和参数的获取方式，其中env表示环境变量
+    # # PyTorch实现分布式运算是通过NCLL进行显卡通信的
+    # torch.distributed.init_process_group(
+    #     backend='nccl',
+    #     rank=args.local_rank
+    # )
+
     # 1. load data
     train_dataloader, val_dataloader = create_dataloaders(args)
 
     # 2. build model and optimizers
     model = MultiModal(args)
 
-    swa_raw_model = copy.deepcopy(model)
+    # swa_raw_model = copy.deepcopy(model)
 
     ema = EMA(model, 0.999, device=args.device)
     ema.register()
@@ -52,50 +61,71 @@ def train_and_validate(args):
     if args.device == 'cuda':
         model = torch.nn.parallel.DataParallel(model.to(args.device))
 
+        # torch.cuda.set_device(args.local_rank)
+        # device = torch.device('cuda', args.local_rank)
+        # model.to(device)
+        # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        # model = torch.nn.parallel.DistributedDataParallel(
+        #     model,
+        #     device_ids=[args.local_rank],
+        #     output_device=args.local_rank,
+        #     find_unused_parameters=True,
+        # )
+        # torch.backends.cudnn.benchmark = True
+        # # 将会让程序在开始时花费一点额外时间，为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速
+        # # DistributedDataParallel可以将不同GPU上求得的梯度进行汇总，实现对模型GPU的更新
+
     # 3. training
     step = 0
     best_score = args.best_score
-    start_time = time.time()
+    # start_time = time.time()
     num_total_steps = len(train_dataloader) * args.max_epochs
     for epoch in range(args.max_epochs):
-        for batch in train_dataloader:
-            model.train()
-            loss, accuracy, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
-            loss = loss.mean()
-            accuracy = accuracy.mean()
-            loss.backward()
 
-            '''fgm'''
-            fgm.attack()  # 在embedding上添加对抗扰动
-            adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
-            adv_loss = adv_loss.mean()
-            adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
-            fgm.restore()  # 恢复embedding参数
-            '''pgd'''
-            # pgd.backup_grad()
-            # for t in range(K):
-            #     pgd.attack(is_first_attack=(t == 0))
-            #     if t != K - 1:
-            #         model.zero_grad()
-            #     else:
-            #         pgd.restore_grad()
-            #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
-            #     adv_loss = adv_loss.mean()
-            #     adv_loss.backward()
-            # pgd.restore()
+        with tqdm(total=len(train_dataloader)) as _tqdm:  # 使用需要的参数对tqdm进行初始化
+            _tqdm.set_description('epoch: {}/{}'.format(epoch, args.max_epochs - 1))  # 设置前缀 一般为epoch的信息
+            for batch in train_dataloader:
+                model.train()
+                loss, accuracy, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],
+                                             batch['title_mask'], batch['label'])
+                loss = loss.mean()
+                accuracy = accuracy.mean()
+                loss.backward()
 
-            optimizer.step()
-            ema.update()
-            optimizer.zero_grad()
-            scheduler.step()
+                '''fgm'''
+                fgm.attack()  # 在embedding上添加对抗扰动
+                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],
+                                          batch['title_mask'], batch['label'])
+                adv_loss = adv_loss.mean()
+                adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
+                fgm.restore()  # 恢复embedding参数
+                '''pgd'''
+                # pgd.backup_grad()
+                # for t in range(K):
+                #     pgd.attack(is_first_attack=(t == 0))
+                #     if t != K - 1:
+                #         model.zero_grad()
+                #     else:
+                #         pgd.restore_grad()
+                #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+                #     adv_loss = adv_loss.mean()
+                #     adv_loss.backward()
+                # pgd.restore()
 
-            step += 1
-            if step % args.print_steps == 0:
-                time_per_step = (time.time() - start_time) / max(1, step)
-                remaining_time = time_per_step * (num_total_steps - step)
-                remaining_time = time.strftime('%H:%M:%S', time.gmtime(remaining_time))
-                logging.info(
-                    f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+                optimizer.step()
+                ema.update()
+                optimizer.zero_grad()
+                scheduler.step()
+
+                step += 1
+                # if step % args.print_steps == 0:
+                #     time_per_step = (time.time() - start_time) / max(1, step)
+                #     remaining_time = time_per_step * (num_total_steps - step)
+                #     remaining_time = time.strftime('%H:%M:%S', time.gmtime(remaining_time))
+                #     logging.info(
+                #         f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+                _tqdm.set_postfix(loss='{:.3f}'.format(loss), accuracy='{:.3f}'.format(accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
+                _tqdm.update(1)  # 设置你每一次想让进度条更新的iteration 大小
 
         ema.apply_shadow()
 
@@ -112,7 +142,7 @@ def train_and_validate(args):
             torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
                        f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
         ema.restore()
-    swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
+    # swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
 
 
 def main():

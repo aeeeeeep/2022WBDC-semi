@@ -5,8 +5,8 @@ import random
 import zipfile
 import torch
 import numpy as np
-# from PIL import Image
-import cv2
+from PIL import Image
+# import cv2
 from io import BytesIO
 from functools import partial
 from transformers import BertTokenizer
@@ -39,14 +39,20 @@ def create_dataloaders(args):
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
+
+    kwargs = {"num_workers": args.num_workers, "pin_memory": True}
+
     train_dataloader = dataloader_class(train_dataset,
                                         batch_size=args.batch_size,
                                         sampler=train_sampler,
-                                        drop_last=True)
+                                        # drop_last=True,
+                                        **kwargs
+                                        )
     val_dataloader = dataloader_class(val_dataset,
                                       batch_size=args.val_batch_size,
                                       sampler=val_sampler,
-                                      drop_last=False)
+                                      drop_last=False,
+                                      )
     return train_dataloader, val_dataloader
 
 
@@ -123,9 +129,9 @@ class MultiModalDataset(Dataset):
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
-            # img = Image.open(BytesIO(img_content))
-            img_stream = BytesIO(img_content)
-            img = cv2.imdecode(np.frombuffer(img_stream.read(), np.uint8), 1)
+            img = Image.open(BytesIO(img_content))
+            # img_stream = BytesIO(img_content)
+            # img = cv2.imdecode(np.frombuffer(img_stream.read(), np.uint8), 1)
 
             img_tensor = self.transform(img)
             frame[i] = img_tensor
