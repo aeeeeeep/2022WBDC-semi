@@ -40,8 +40,8 @@ class ALBEF(nn.Module):
             self.cls_head_m = nn.Linear(768, len(CATEGORY_ID_LIST))
 
             self.model_pairs = [[self.bert, self.bert_m],
-                                [self.cls_head, self.cls_head_m],
                                 [self.drop, self.drop_m],
+                                [self.cls_head, self.cls_head_m],
                                 ]
             self.copy_params()
             self.momentum = 0.995

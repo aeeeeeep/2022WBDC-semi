@@ -18,21 +18,74 @@ class MultiModal(nn.Module):
         bert_output_size = 768
         self.fusion = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio, args.dropout)
         self.classifier = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
+        self.distill = True
 
-    def forward(self, inputs, inference=False):
-        inputs['frame_input'] = self.visual_backbone(inputs['frame_input'])
-        bert_embedding = self.bert(inputs['title_input'], inputs['title_mask'])['pooler_output']
+        if self.distill:
+            self.bert_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+            self.visual_backbone_m = swin_tiny(args.swin_pretrained_path)
+            self.nextvlad_m = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
+                                     output_size=args.vlad_hidden_size, dropout=args.dropout)
+            self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
+            bert_output_size = 768
+            self.fusion_m = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio,
+                                        args.dropout)
+            self.classifier_m = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
 
-        vision_embedding = self.nextvlad(inputs['frame_input'], inputs['frame_mask'])
+            self.model_pairs = [[self.bert, self.bert_m],
+                                [self.nextvlad, self.nextvlad_m],
+                                [self.enhance, self.enhance_m],
+                                [self.fusion, self.fusion_m],
+                                [self.classifier, self.classifier_m],
+                                ]
+            self.copy_params()
+            self.momentum = 0.995
+
+    def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, inference=False):
+        frame_inputs = self.visual_backbone(frame_input)
+
+        bert_embedding = self.bert(text_input, text_mask)['pooler_output']
+
+        vision_embedding = self.nextvlad(frame_inputs, frame_mask)
         vision_embedding = self.enhance(vision_embedding)
 
         final_embedding = self.fusion([vision_embedding, bert_embedding])
         prediction = self.classifier(final_embedding)
 
+        if self.distill:
+            with torch.no_grad():
+                self._momentum_update()
+                bert_embedding_m = self.bert(text_input, text_mask)['pooler_output']
+
+                vision_embedding_m = self.nextvlad(frame_inputs, frame_mask)
+                vision_embedding_m = self.enhance(vision_embedding_m)
+
+                final_embedding_m = self.fusion([vision_embedding_m, bert_embedding_m])
+                prediction_m = self.classifier(final_embedding_m)
+
+            label = label.squeeze(dim=1)
+            loss = (1 - alpha) * F.cross_entropy(prediction, label, label_smoothing=0.1) - alpha * torch.sum(
+                F.log_softmax(prediction, dim=1) * F.softmax(prediction_m, dim=1), dim=1).mean()
+            pred_label_id = torch.argmax(prediction, dim=1)
+            accuracy = (label == pred_label_id).float().sum() / label.shape[0]
+            return loss, accuracy, pred_label_id, label
+
         if inference:
             return torch.argmax(prediction, dim=1)
         else:
-            return self.cal_loss(prediction, inputs['label'])
+            return self.cal_loss(prediction, label)
+
+    @torch.no_grad()
+    def copy_params(self):
+        for model_pair in self.model_pairs:
+            for param, param_m in zip(model_pair[0].parameters(), model_pair[1].parameters()):
+                param_m.data.copy_(param.data)  # initialize
+                param_m.requires_grad = False  # not update by gradient
+
+    @torch.no_grad()
+    def _momentum_update(self):
+        for model_pair in self.model_pairs:
+            for param, param_m in zip(model_pair[0].parameters(), model_pair[1].parameters()):
+                param_m.data = param_m.data * self.momentum + param.data * (1. - self.momentum)
 
     @staticmethod
     def cal_loss(prediction, label):

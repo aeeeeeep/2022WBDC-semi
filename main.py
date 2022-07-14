@@ -8,6 +8,7 @@ from config import parse_args
 from data_helper import create_dataloaders
 from util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
 from pgd import PGD
+from fgm import FGM
 from ema import EMA
 from swa import swa
 
@@ -19,7 +20,7 @@ def validate(model, val_dataloader):
     losses = []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch)
+            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
             loss = loss.mean()
             predictions.extend(pred_label_id.cpu().numpy())
             labels.extend(label.cpu().numpy())
@@ -43,8 +44,9 @@ def train_and_validate(args):
     ema = EMA(model, 0.999, device=args.device)
     ema.register()
 
-    pgd = PGD(model)
-    K = 3
+    # pgd = PGD(model)
+    # K = 3
+    fgm = FGM(model)
 
     optimizer, scheduler = build_optimizer(args, model)
     if args.device == 'cuda':
@@ -58,22 +60,29 @@ def train_and_validate(args):
     for epoch in range(args.max_epochs):
         for batch in train_dataloader:
             model.train()
-            loss, accuracy, _, _ = model(inputs=batch)
+            loss, accuracy, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
             loss = loss.mean()
             accuracy = accuracy.mean()
             loss.backward()
 
-            pgd.backup_grad()
-            for t in range(K):
-                pgd.attack(is_first_attack=(t == 0))
-                if t != K - 1:
-                    model.zero_grad()
-                else:
-                    pgd.restore_grad()
-                adv_loss, _, _, _ = model(inputs=batch)
-                adv_loss = adv_loss.mean()
-                adv_loss.backward()
-            pgd.restore()
+            '''fgm'''
+            fgm.attack()  # 在embedding上添加对抗扰动
+            adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
+            adv_loss = adv_loss.mean()
+            adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
+            fgm.restore()  # 恢复embedding参数
+            '''pgd'''
+            # pgd.backup_grad()
+            # for t in range(K):
+            #     pgd.attack(is_first_attack=(t == 0))
+            #     if t != K - 1:
+            #         model.zero_grad()
+            #     else:
+            #         pgd.restore_grad()
+            #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+            #     adv_loss = adv_loss.mean()
+            #     adv_loss.backward()
+            # pgd.restore()
 
             optimizer.step()
             ema.update()
