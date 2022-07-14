@@ -90,16 +90,16 @@ def train_and_validate(args):
             scheduler.step()
 
             step += 1
-            # if step % args.print_steps == 0:
-            #     time_per_step = (time.time() - start_time) / max(1, step)
-            #     remaining_time = time_per_step * (num_total_steps - step)
-            #     remaining_time = time.strftime('%D:%H:%M:%S', time.gmtime(remaining_time))
-            #     logging.info(
-            #         f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
+            if step % args.print_steps == 0:
+                time_per_step = (time.time() - start_time) / max(1, step)
+                remaining_time = time_per_step * (num_total_steps - step)
+                remaining_time = time.strftime('%H:%M:%S', time.gmtime(remaining_time))
+                logging.info(
+                    f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
 
-        logging.info(f"Train: Epoch {epoch} : loss {loss:.3f}, "
-                     # f"train_acc {train_acc:.3f}")
-                     f"adv_loss {adv_loss:.3f}, accuracy {accuracy:.3f}")
+        # logging.info(f"Train: Epoch {epoch} : loss {loss:.3f}, "
+        #              # f"train_acc {train_acc:.3f}")
+        #              f"adv_loss {adv_loss:.3f}, accuracy {accuracy:.3f}")
 
         ema.apply_shadow()
 

@@ -21,24 +21,27 @@ class ALBEF(nn.Module):
         self.bert = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
         # self.mean_pooling = MeanPooling()
         self.drop = nn.Dropout(p=0.2)
-        self.cls_head = nn.Sequential(
-            nn.Linear(768, 768),
-            nn.ReLU(),
-            nn.Linear(768, len(CATEGORY_ID_LIST))
-        )
+        # self.cls_head = nn.Sequential(
+        #     nn.Linear(768, 768),
+        #     nn.ReLU(),
+        #     nn.Linear(768, len(CATEGORY_ID_LIST))
+        # )
+        self.cls_head = nn.Linear(768, len(CATEGORY_ID_LIST))
 
         if self.distill:
             self.bert_m = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
             # self.mean_pooling_m = MeanPooling()
             self.drop_m = nn.Dropout(p=0.2)
-            self.cls_head_m = nn.Sequential(
-                nn.Linear(768, 768),
-                nn.ReLU(),
-                nn.Linear(768, len(CATEGORY_ID_LIST))
-            )
+            # self.cls_head = nn.Sequential(
+            #     nn.Linear(768, 768),
+            #     nn.ReLU(),
+            #     nn.Linear(768, len(CATEGORY_ID_LIST))
+            # )
+            self.cls_head_m = nn.Linear(768, len(CATEGORY_ID_LIST))
 
             self.model_pairs = [[self.bert, self.bert_m],
                                 [self.cls_head, self.cls_head_m],
+                                [self.drop, self.drop_m],
                                 ]
             self.copy_params()
             self.momentum = 0.995

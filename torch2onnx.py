@@ -8,8 +8,6 @@ from torch.utils.data import SequentialSampler, DataLoader
 from config import parse_args
 import numpy as np
 from tqdm import tqdm
-import onnx
-import onnxruntime
 import os
 import tensorrt as trt
 import pycuda.driver as cuda
