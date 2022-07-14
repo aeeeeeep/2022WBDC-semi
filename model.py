@@ -31,9 +31,7 @@ class MultiModal(nn.Module):
                                         args.dropout)
             self.classifier_m = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
 
-            self.model_pairs = [[self.bert, self.bert_m],
-                                [self.nextvlad, self.nextvlad_m],
-                                [self.enhance, self.enhance_m],
+            self.model_pairs = [[self.enhance, self.enhance_m],
                                 [self.fusion, self.fusion_m],
                                 [self.classifier, self.classifier_m],
                                 ]
