@@ -19,7 +19,7 @@ class ALBEF_PRE(nn.Module):
         bert_config = BertConfig.from_json_file('./config.json')
         self.text_encoder = BertForMaskedLM.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
 
-        self.vision_proj = nn.Linear(768, 768)
+        self.vision_proj = nn.Linear(args.vlad_hidden_size, 768)
         self.text_proj = nn.Linear(768, 768)
 
         self.temp = nn.Parameter(torch.ones([]) * 0.07)
@@ -33,7 +33,7 @@ class ALBEF_PRE(nn.Module):
         self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
         self.text_encoder_m = BertForMaskedLM.from_pretrained(args.bert_dir, cache_dir=args.bert_cache,
                                                               config=bert_config)
-        self.vision_proj_m = nn.Linear(768, 768)
+        self.vision_proj_m = nn.Linear(args.vlad_hidden_size, 768)
         self.text_proj_m = nn.Linear(768, 768)
 
         self.model_pairs = [[self.nextvlad, self.nextvlad_m],
@@ -61,12 +61,13 @@ class ALBEF_PRE(nn.Module):
         frame_emb = self.nextvlad(frame_backbone, frame_mask)
         frame_emb = self.enhance(frame_emb)
 
-        frame_feat = F.normalize(self.vision_proj(frame_emb[:,0,:]),dim=-1)
+        frame_feat = F.normalize(self.vision_proj(frame_emb),dim=-1)
 
         text_output = self.text_encoder.bert(text_input, attention_mask=text_mask,
-                                             return_dict=True, mode='text')
+                                             # return_dict=True, mode='text')
+                                             return_dict=True)
         text_emb = text_output.last_hidden_state
-        text_feat = F.normalize(self.text_proj(text_emb[:,0,:]),dim=-1)
+        text_feat = F.normalize(self.text_proj(text_emb),dim=-1)
 
         # get momentum features
         with torch.no_grad():
@@ -74,10 +75,11 @@ class ALBEF_PRE(nn.Module):
             frame_backbone_m = self.visual_backbone_m(frame_input)
             frame_emb_m = self.nextvlad_m(frame_backbone_m, frame_mask)
             frame_emb_m = self.enhance_m(frame_emb_m)
-            frame_feat_m = F.normalize(self.vision_proj_m(frame_emb_m[:, 0, :]), dim=-1)
+            frame_feat_m = F.normalize(self.vision_proj_m(frame_emb_m), dim=-1)
             frame_feat_all = torch.cat([frame_feat_m.t(), self.frame_queue.clone().detach()], dim=1)
             text_output_m = self.text_encoder_m.bert(text_input, attention_mask=text_mask,
-                                                     return_dict=True, mode='text')
+                                                    # return_dict=True, mode='text')
+                                                     return_dict=True)
             text_feat_m = F.normalize(self.text_proj_m(text_output_m.last_hidden_state[:, 0, :]), dim=-1)
             text_feat_all = torch.cat([text_feat_m.t(), self.text_queue.clone().detach()], dim=1)
 

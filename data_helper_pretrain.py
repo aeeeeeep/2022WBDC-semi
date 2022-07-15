@@ -24,6 +24,38 @@ class DataLoaderX(DataLoader):
     def __iter__(self):
         return BackgroundGenerator(super().__iter__())
 
+# pretrain
+def create_pretrain_dataloaders(args):
+    dataset = MultiModalDataset(args, args.pretrain_annotation, args.pretrain_zip_frames)
+
+    size = len(dataset)
+    val_size = 10000
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size])
+
+    if args.num_workers > 0:
+        dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=args.num_workers, prefetch_factor=args.prefetch)
+    else:
+        # single-thread reading does not support prefetch_factor arg
+        dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=0)
+
+    train_sampler = RandomSampler(train_dataset)
+    val_sampler = SequentialSampler(val_dataset)
+
+    # kwargs = {"num_workers": args.num_workers, "pin_memory": True}
+
+    train_dataloader = dataloader_class(train_dataset,
+                                        batch_size=args.batch_size,
+                                        sampler=train_sampler,
+                                        drop_last=True,
+                                        # **kwargs
+                                        )
+    val_dataloader = dataloader_class(val_dataset,
+                                      batch_size=args.val_batch_size,
+                                      sampler=val_sampler,
+                                      drop_last=False,
+                                      )
+    return train_dataloader, val_dataloader
+
 def create_dataloaders(args):
     dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
     size = len(dataset)
@@ -33,7 +65,7 @@ def create_dataloaders(args):
 
     train_indices, test_indices = train_test_split(list(range(len(dataset.labels))), test_size=args.val_ratio, random_state=2022, stratify=dataset.labels)
     train_dataset, val_dataset = torch.utils.data.Subset(dataset, train_indices), torch.utils.data.Subset(dataset, test_indices)
-    resample(train_dataset)
+    # resample(train_dataset)
 
 
     if args.num_workers > 0:
@@ -105,10 +137,15 @@ class MultiModalDataset(Dataset):
         # read data from zipfile
         vid = self.anns[idx]['id']
 
-        zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
-        handler = zipfile.ZipFile(zip_path, 'r')
+        # zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
+        # handler = zipfile.ZipFile(zip_path, 'r')
+        # namelist = sorted(handler.namelist())
+        # pretrain
+        unlabel_zip = zipfile.ZipFile(self.zip_frame_dir, 'r')
+        zip_path = f'{vid[-3:]}/{vid}.zip'
+        handler = unlabel_zip.open(zip_path)
+        handler = zipfile.ZipFile(handler, 'r')
         namelist = sorted(handler.namelist())
-
 
         num_frames = len(namelist)
         frame = torch.zeros((self.max_frame, 3, 224, 224), dtype=torch.float32)
@@ -175,10 +212,11 @@ class MultiModalDataset(Dataset):
             title_mask=title_mask,
             # title_token_type_ids=title_token_type_ids
         )
+        # pretrain
         # Step 4, load label if not test mode
-        if not self.test_mode:
-            label = category_id_to_lv2id(self.anns[idx]['category_id'])
-            data['label'] = torch.LongTensor([label])
+        # if not self.test_mode:
+        #     label = category_id_to_lv2id(self.anns[idx]['category_id'])
+        #     data['label'] = torch.LongTensor([label])
 
         return data
 
