@@ -6,7 +6,6 @@ def parse_args():
 
     parser.add_argument("--seed", type=int, default=2022, help="random seed.")
     parser.add_argument('--dropout', type=float, default=0.3, help='dropout ratio')
-    parser.add_argument('--local_rank', type=int, default=0, help='node rank for distributed training')
 
     # ========================= Data Configs ==========================
     parser.add_argument('--train_annotation', type=str, default='/home/tione/notebook/data/annotations/labeled.json')
@@ -14,7 +13,7 @@ def parse_args():
     parser.add_argument('--train_zip_frames', type=str, default='/home/tione/notebook/data/zip_frames/labeled/')
     parser.add_argument('--test_zip_frames', type=str, default='/opt/ml/input/data/zip_frames/test/')
     parser.add_argument('--test_output_csv', type=str, default='/opt/ml/output/result.csv')
-    parser.add_argument('--val_ratio', default=0.1, type=float, help='split 10 percentages of training data as validation')
+    parser.add_argument('--val_ratio', default=0.05, type=float, help='split 10 percentages of training data as validation')
     parser.add_argument('--batch_size', default=16, type=int, help="use for training duration per worker")
     parser.add_argument('--val_batch_size', default=50, type=int, help="use for validation duration per worker")
     parser.add_argument('--test_batch_size', default=50, type=int, help="use for testing duration per worker")

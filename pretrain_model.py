@@ -1,95 +1,85 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from transformers import BertModel, BertForMaskedLM
 
 from swin import swin_tiny
 from category_id_map import CATEGORY_ID_LIST
-from transformers import BertModel, BertConfig
 
 
-class ALBEF(nn.Module):
+class MultiModal(nn.Module):
     def __init__(self, args):
         super().__init__()
+        self.bert = BertForMaskedLM.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
 
-        self.distill = True
+        self.vision_proj = nn.Linear(768, 768)
+        self.text_proj = nn.Linear(768, 768)
 
         self.visual_backbone = swin_tiny(args.swin_pretrained_path)
         self.nextvlad = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
                                  output_size=args.vlad_hidden_size, dropout=args.dropout)
         self.enhance = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
+        bert_output_size = 768
+        self.fusion = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio, args.dropout)
+        self.temp = nn.Parameter(torch.ones([]) * 0.07)
+        self.queue_size = 65536
+        self.momentum = 0.995
+        self.itm_head = nn.Linear(768, 2)
 
-        bert_config = BertConfig.from_json_file('./config.json')
-        self.text_encoder = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
 
-        self.cls_head = nn.Sequential(
-            nn.Linear(768, 768),
-            nn.ReLU(),
-            nn.Linear(768, len(CATEGORY_ID_LIST))
-        )
+
+
+        self.bert_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+        self.text_proj = nn.Linear(768, 768)
+        self.visual_backbone_m = swin_tiny(args.swin_pretrained_path)
+        self.nextvlad_m = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
+                                     output_size=args.vlad_hidden_size, dropout=args.dropout)
+        self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
+        self.vision_proj = nn.Linear(768, 768)
+        bert_output_size = 768
+        self.fusion_m = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio,
+                                        args.dropout)
+
+
+        self.model_pairs = [[self.bert, self.bert_m],
+                            [self.enhance, self.enhance_m],
+                            [self.fusion, self.fusion_m],
+                            ]
+        self.copy_params()
+
+    def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, inference=False):
+        frame_inputs = self.visual_backbone(frame_input)
+
+        bert_embedding = self.bert(text_input, text_mask)['pooler_output']
+
+        vision_embedding = self.nextvlad(frame_inputs, frame_mask)
+        vision_embedding = self.enhance(vision_embedding)
+
+        final_embedding = self.fusion([vision_embedding, bert_embedding])
+        prediction = self.classifier(final_embedding)
 
         if self.distill:
-            self.nextvlad_m = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
-                                     output_size=args.vlad_hidden_size, dropout=args.dropout)
-            self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
-            self.text_encoder_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
-            self.cls_head_m = nn.Sequential(
-                nn.Linear(768, 768),
-                nn.ReLU(),
-                nn.Linear(768, len(CATEGORY_ID_LIST))
-            )
+            with torch.no_grad():
+                self._momentum_update()
+                bert_embedding_m = self.bert(text_input, text_mask)['pooler_output']
 
-            self.model_pairs = [[self.nextvlad, self.nextvlad_m],
-                                [self.enhance, self.enhance_m],
-                                [self.text_encoder, self.text_encoder_m],
-                                [self.cls_head, self.cls_head_m],
-                                ]
-            self.copy_params()
-            self.momentum = 0.995
+                vision_embedding_m = self.nextvlad(frame_inputs, frame_mask)
+                vision_embedding_m = self.enhance(vision_embedding_m)
 
-    def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, train=True):
-        frame_backbone = self.visual_backbone(frame_input)
-        frame_emb = self.nextvlad(frame_backbone, frame_mask)
-        frame_emb = self.enhance(frame_emb)
+                final_embedding_m = self.fusion([vision_embedding_m, bert_embedding_m])
+                prediction_m = self.classifier(final_embedding_m)
 
-        if train:
-            output = self.text_encoder(text_input,
-                                       attention_mask=text_mask,
-                                       encoder_hidden_states=frame_emb,
-                                       encoder_attention_mask=frame_mask,
-                                       return_dict=True
-                                       )
-            prediction = self.cls_head(output.last_hidden_state[:, 0, :])
-            if self.distill:
-                with torch.no_grad():
-                    self._momentum_update()
-                    frame_emb_m = self.nextvlad_m(frame_backbone, frame_mask)
-                    frame_emb_m = self.enhance_m(frame_emb_m)
-                    output_m = self.text_encoder_m(text_input,
-                                                   attention_mask=text_mask,
-                                                   encoder_hidden_states=frame_emb_m,
-                                                   encoder_attention_mask=frame_mask,
-                                                   return_dict=True
-                                                   )
-                    prediction_m = self.cls_head_m(output_m.last_hidden_state[:, 0, :])
+            label = label.squeeze(dim=1)
+            loss = (1 - alpha) * F.cross_entropy(prediction, label, label_smoothing=0.1) - alpha * torch.sum(
+                F.log_softmax(prediction, dim=1) * F.softmax(prediction_m, dim=1), dim=1).mean()
+            pred_label_id = torch.argmax(prediction, dim=1)
+            accuracy = (label == pred_label_id).float().sum() / label.shape[0]
+            return loss, accuracy, pred_label_id, label
 
-                label = label.squeeze(dim=1)
-                loss = (1 - alpha) * F.cross_entropy(prediction, label) - alpha * torch.sum(
-                    F.log_softmax(prediction, dim=1) * F.softmax(prediction_m, dim=1), dim=1).mean()
-                pred_label_id = torch.argmax(prediction, dim=1)
-                accuracy = (label == pred_label_id).float().sum() / label.shape[0]
-                return loss, accuracy, pred_label_id, label
-            else:
-                return self.cal_loss(prediction, label)
-
-        else:
-            output = self.text_encoder(text_input,
-                                       attention_mask=text_mask,
-                                       encoder_hidden_states=frame_emb,
-                                       encoder_attention_mask=frame_mask,
-                                       return_dict=True
-                                       )
-            prediction = self.cls_head(output.last_hidden_state[:, 0, :])
+        if inference:
             return torch.argmax(prediction, dim=1)
+        else:
+            return self.cal_loss(prediction, label)
 
     @torch.no_grad()
     def copy_params(self):
@@ -175,3 +165,19 @@ class SENet(nn.Module):
         x = torch.mul(x, gates)
 
         return x
+
+
+class ConcatDenseSE(nn.Module):
+    def __init__(self, multimodal_hidden_size, hidden_size, se_ratio, dropout):
+        super().__init__()
+        self.fusion = nn.Linear(multimodal_hidden_size, hidden_size)
+        self.fusion_dropout = nn.Dropout(dropout)
+        self.enhance = SENet(channels=hidden_size, ratio=se_ratio)
+
+    def forward(self, inputs):
+        embeddings = torch.cat(inputs, dim=1)
+        embeddings = self.fusion_dropout(embeddings)
+        embedding = self.fusion(embeddings)
+        embedding = self.enhance(embedding)
+
+        return embedding

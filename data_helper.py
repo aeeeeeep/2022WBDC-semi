@@ -12,12 +12,17 @@ from functools import partial
 from transformers import BertTokenizer
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
+from prefetch_generator import BackgroundGenerator
 from torchvision.transforms import Compose, Resize, CenterCrop, Normalize, ToTensor
 from sklearn.model_selection import train_test_split
 from collections import Counter
 
 from category_id_map import category_id_to_lv2id
 
+
+class DataLoaderX(DataLoader):
+    def __iter__(self):
+        return BackgroundGenerator(super().__iter__())
 
 def create_dataloaders(args):
     dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
@@ -32,21 +37,21 @@ def create_dataloaders(args):
 
 
     if args.num_workers > 0:
-        dataloader_class = partial(DataLoader, pin_memory=True, num_workers=args.num_workers, prefetch_factor=args.prefetch)
+        dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=args.num_workers, prefetch_factor=args.prefetch)
     else:
         # single-thread reading does not support prefetch_factor arg
-        dataloader_class = partial(DataLoader, pin_memory=True, num_workers=0)
+        dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=0)
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    kwargs = {"num_workers": args.num_workers, "pin_memory": True}
+    # kwargs = {"num_workers": args.num_workers, "pin_memory": True}
 
     train_dataloader = dataloader_class(train_dataset,
                                         batch_size=args.batch_size,
                                         sampler=train_sampler,
-                                        # drop_last=True,
-                                        **kwargs
+                                        drop_last=True,
+                                        # **kwargs
                                         )
     val_dataloader = dataloader_class(val_dataset,
                                       batch_size=args.val_batch_size,
