@@ -9,19 +9,22 @@ def parse_args():
 
     # ========================= Data Configs ==========================
     parser.add_argument('--train_annotation', type=str, default='/home/tione/notebook/data/annotations/labeled.json')
+    parser.add_argument('--pretrain_annotation', type=str, default='/home/tione/notebook/data/annotations/unlabeled_new.json')
     parser.add_argument('--test_annotation', type=str, default='/opt/ml/input/data/annotations/test.json')
     parser.add_argument('--train_zip_frames', type=str, default='/home/tione/notebook/data/zip_frames/labeled/')
+    parser.add_argument('--pretrain_zip_frames', type=str, default='/home/tione/notebook/data/zip_frames/unlabeled.zip')
     parser.add_argument('--test_zip_frames', type=str, default='/opt/ml/input/data/zip_frames/test/')
     parser.add_argument('--test_output_csv', type=str, default='/opt/ml/output/result.csv')
     parser.add_argument('--val_ratio', default=0.05, type=float, help='split 10 percentages of training data as validation')
     parser.add_argument('--batch_size', default=16, type=int, help="use for training duration per worker")
     parser.add_argument('--val_batch_size', default=50, type=int, help="use for validation duration per worker")
     parser.add_argument('--test_batch_size', default=50, type=int, help="use for testing duration per worker")
-    parser.add_argument('--prefetch', default=16, type=int, help="use for training duration per worker")
+    parser.add_argument('--prefetch', default=4, type=int, help="use for training duration per worker")
     parser.add_argument('--num_workers', default=8, type=int, help="num_workers for dataloaders")
 
     # ======================== SavedModel Configs =========================
     parser.add_argument('--savedmodel_path', type=str, default='save/')
+    parser.add_argument('--savedpremodel_path', type=str, default='pretrain/')
     parser.add_argument('--ckpt_file', type=str, default='save/model.bin')
     parser.add_argument('--best_score', default=0.5, type=float, help='save checkpoint if mean_f1 > best_score')
 
@@ -31,7 +34,7 @@ def parse_args():
     parser.add_argument('--print_steps', type=int, default=20, help="Number of steps to log training metrics.")
     parser.add_argument('--warmup_steps', default=1000, type=int, help="warm ups for parameters not in bert or vit")
     parser.add_argument('--minimum_lr', default=0., type=float, help='minimum learning rate')
-    parser.add_argument('--learning_rate', default=2e-5, type=float, help='initial learning rate')
+    parser.add_argument('--learning_rate', default=5e-5, type=float, help='initial learning rate')
     parser.add_argument("--weight_decay", default=0.01, type=float, help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-6, type=float, help="Epsilon for Adam optimizer.")
 

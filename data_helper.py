@@ -24,6 +24,38 @@ class DataLoaderX(DataLoader):
     def __iter__(self):
         return BackgroundGenerator(super().__iter__())
 
+# pretrain
+def create_pretrain_dataloaders(args):
+    dataset = MultiModalDataset(args, args.pretrain_annotation, args.pretrain_zip_frames)
+
+    size = len(dataset)
+    val_size = 10000
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size])
+
+    if args.num_workers > 0:
+        dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=args.num_workers, prefetch_factor=args.prefetch)
+    else:
+        # single-thread reading does not support prefetch_factor arg
+        dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=0)
+
+    train_sampler = RandomSampler(train_dataset)
+    val_sampler = SequentialSampler(val_dataset)
+
+    # kwargs = {"num_workers": args.num_workers, "pin_memory": True}
+
+    train_dataloader = dataloader_class(train_dataset,
+                                        batch_size=args.batch_size,
+                                        sampler=train_sampler,
+                                        drop_last=True,
+                                        # **kwargs
+                                        )
+    val_dataloader = dataloader_class(val_dataset,
+                                      batch_size=args.val_batch_size,
+                                      sampler=val_sampler,
+                                      drop_last=False,
+                                      )
+    return train_dataloader, val_dataloader
+
 def create_dataloaders(args):
     dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
     size = len(dataset)
@@ -87,8 +119,8 @@ class MultiModalDataset(Dataset):
         # initialize the text_input tokenizer
         self.tokenizer = BertTokenizer.from_pretrained(args.bert_dir, use_fast=True, cache_dir=args.bert_cache)
         self.labels = None
-        if not test_mode:
-            self.labels = [self.anns[idx]['category_id'] for idx in range(len(self.anns))]
+        # if not test_mode:
+        #     self.labels = [self.anns[idx]['category_id'] for idx in range(len(self.anns))]
 
         # we use the standard frame_input transform as in the offifical Swin-Transformer.
         self.transform = Compose([
@@ -104,8 +136,16 @@ class MultiModalDataset(Dataset):
     def get_visual_frames(self, idx: int) -> tuple:
         # read data from zipfile
         vid = self.anns[idx]['id']
-        zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
-        handler = zipfile.ZipFile(zip_path, 'r')
+
+        # zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
+        # handler = zipfile.ZipFile(zip_path, 'r')
+        # namelist = sorted(handler.namelist())
+        # pretrain
+        unlabel_zip = zipfile.ZipFile(self.zip_frame_dir, 'r')
+        # unlabel_zip_dir = sorted(unlabel_zip.namelist())
+        zip_path = f'{vid[-3:]}/{vid}.zip'
+        handler = unlabel_zip.open(zip_path)
+        handler = zipfile.ZipFile(handler, 'r')
         namelist = sorted(handler.namelist())
 
         num_frames = len(namelist)
@@ -118,19 +158,7 @@ class MultiModalDataset(Dataset):
             step = num_frames // self.max_frame
             select_inds = list(range(0, num_frames, step))
             select_inds = select_inds[:self.max_frame]
-            # if the number of frames exceeds the limitation, we need to sample
-            # the frames.
-            # if self.test_mode:
-            #     # uniformly sample when test mode is True
-            #     step = num_frames // self.max_frame
-            #     select_inds = list(range(0, num_frames, step))
-            #     select_inds = select_inds[:self.max_frame]
-            # else:
-            #     # randomly sample when test mode is False
-            #     select_inds = list(range(num_frames))
-            #     random.shuffle(select_inds)
-            #     select_inds = select_inds[:self.max_frame]
-            #     select_inds = sorted(select_inds)
+
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
@@ -185,11 +213,11 @@ class MultiModalDataset(Dataset):
             title_mask=title_mask,
             # title_token_type_ids=title_token_type_ids
         )
-
+        # pretrain
         # Step 4, load label if not test mode
-        if not self.test_mode:
-            label = category_id_to_lv2id(self.anns[idx]['category_id'])
-            data['label'] = torch.LongTensor([label])
+        # if not self.test_mode:
+        #     label = category_id_to_lv2id(self.anns[idx]['category_id'])
+        #     data['label'] = torch.LongTensor([label])
 
         return data
 

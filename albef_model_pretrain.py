@@ -11,8 +11,6 @@ class ALBEF_PRE(nn.Module):
     def __init__(self, args):
         super().__init__()
 
-        self.distill = True
-
         self.visual_backbone = swin_tiny(args.swin_pretrained_path)
         self.nextvlad = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
                                  output_size=args.vlad_hidden_size, dropout=args.dropout)
@@ -51,7 +49,7 @@ class ALBEF_PRE(nn.Module):
         self.register_buffer("text_queue", torch.randn(96, self.queue_size))
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
 
-        self.frame_queue = nn.functional.normalize(self.image_queue, dim=0)
+        self.frame_queue = nn.functional.normalize(self.frame_queue, dim=0)
         self.text_queue = nn.functional.normalize(self.text_queue, dim=0)
 
 
@@ -211,7 +209,7 @@ class ALBEF_PRE(nn.Module):
         assert self.queue_size % batch_size == 0  # for simplicity
 
         # replace the keys at ptr (dequeue and enqueue)
-        self.image_queue[:, ptr:ptr + batch_size] = image_feats.T
+        self.frame_queue[:, ptr:ptr + batch_size] = image_feats.T
         self.text_queue[:, ptr:ptr + batch_size] = text_feats.T
         ptr = (ptr + batch_size) % self.queue_size  # move pointer
 
