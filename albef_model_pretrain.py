@@ -72,8 +72,7 @@ class ALBEF_PRE(nn.Module):
         # get momentum features
         with torch.no_grad():
             self._momentum_update()
-            frame_backbone_m = self.visual_backbone_m(frame_input)
-            frame_emb_m = self.nextvlad_m(frame_backbone_m, frame_mask)
+            frame_emb_m = self.nextvlad_m(frame_backbone, frame_mask)
             frame_emb_m = self.enhance_m(frame_emb_m)
             frame_feat_m = F.normalize(self.vision_proj_m(frame_emb_m), dim=-1)
             frame_feat_all = torch.cat([frame_feat_m.t(), self.frame_queue.clone().detach()], dim=1)

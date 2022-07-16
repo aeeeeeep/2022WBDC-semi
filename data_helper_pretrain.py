@@ -137,14 +137,8 @@ class MultiModalDataset(Dataset):
         # read data from zipfile
         vid = self.anns[idx]['id']
 
-        # zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
-        # handler = zipfile.ZipFile(zip_path, 'r')
-        # namelist = sorted(handler.namelist())
-        # pretrain
-        unlabel_zip = zipfile.ZipFile(self.zip_frame_dir, 'r')
-        zip_path = f'{vid[-3:]}/{vid}.zip'
-        handler = unlabel_zip.open(zip_path)
-        handler = zipfile.ZipFile(handler, 'r')
+        zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
+        handler = zipfile.ZipFile(zip_path, 'r')
         namelist = sorted(handler.namelist())
 
         num_frames = len(namelist)

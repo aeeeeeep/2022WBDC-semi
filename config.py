@@ -12,7 +12,7 @@ def parse_args():
     parser.add_argument('--pretrain_annotation', type=str, default='/home/tione/notebook/data/annotations/unlabeled_new.json')
     parser.add_argument('--test_annotation', type=str, default='/opt/ml/input/data/annotations/test.json')
     parser.add_argument('--train_zip_frames', type=str, default='/home/tione/notebook/data/zip_frames/labeled/')
-    parser.add_argument('--pretrain_zip_frames', type=str, default='/home/tione/notebook/data/zip_frames/unlabeled.zip')
+    parser.add_argument('--pretrain_zip_frames', type=str, default='/home/tione/notebook/data/zip_frames/unlabeled')
     parser.add_argument('--test_zip_frames', type=str, default='/opt/ml/input/data/zip_frames/test/')
     parser.add_argument('--test_output_csv', type=str, default='/opt/ml/output/result.csv')
     parser.add_argument('--val_ratio', default=0.05, type=float, help='split 10 percentages of training data as validation')

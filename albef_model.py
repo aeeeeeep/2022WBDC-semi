@@ -20,6 +20,7 @@ class ALBEF(nn.Module):
 
         bert_config = BertConfig.from_json_file('./config.json')
         self.text_encoder = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
+        self.fusion = ConcatDenseSE(args.vlad_hidden_size + 768, 768, args.se_ratio, args.dropout)
 
         self.cls_head = nn.Sequential(
             nn.Linear(768, 768),
@@ -32,6 +33,7 @@ class ALBEF(nn.Module):
                                      output_size=args.vlad_hidden_size, dropout=args.dropout)
             self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
             self.text_encoder_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
+            self.fusion_m = ConcatDenseSE(args.vlad_hidden_size + 768, 768, args.se_ratio, args.dropout)
             self.cls_head_m = nn.Sequential(
                 nn.Linear(768, 768),
                 nn.ReLU(),
@@ -41,6 +43,7 @@ class ALBEF(nn.Module):
             self.model_pairs = [[self.nextvlad, self.nextvlad_m],
                                 [self.enhance, self.enhance_m],
                                 [self.text_encoder, self.text_encoder_m],
+                                [self.fusion, self.fusion_m],
                                 [self.cls_head, self.cls_head_m],
                                 ]
             self.copy_params()
@@ -56,9 +59,10 @@ class ALBEF(nn.Module):
                                        attention_mask=text_mask,
                                        encoder_hidden_states=frame_emb,
                                        encoder_attention_mask=frame_mask,
-                                       return_dict=True
+                                       return_dict=True,
                                        )
-            prediction = self.cls_head(output.last_hidden_state[:, 0, :])
+            final_embedding = self.fusion([frame_emb, output.last_hidden_state[:, 0, :]])
+            prediction = self.cls_head(final_embedding)
             if self.distill:
                 with torch.no_grad():
                     self._momentum_update()
@@ -68,9 +72,10 @@ class ALBEF(nn.Module):
                                                    attention_mask=text_mask,
                                                    encoder_hidden_states=frame_emb_m,
                                                    encoder_attention_mask=frame_mask,
-                                                   return_dict=True
+                                                   return_dict=True,
                                                    )
-                    prediction_m = self.cls_head_m(output_m.last_hidden_state[:, 0, :])
+                    final_embedding_m = self.fusion([frame_emb_m, output_m.last_hidden_state[:, 0, :]])
+                    prediction_m = self.cls_head_m(final_embedding_m)
 
                 label = label.squeeze(dim=1)
                 loss = (1 - alpha) * F.cross_entropy(prediction, label) - alpha * torch.sum(
@@ -88,7 +93,8 @@ class ALBEF(nn.Module):
                                        encoder_attention_mask=frame_mask,
                                        return_dict=True
                                        )
-            prediction = self.cls_head(output.last_hidden_state[:, 0, :])
+            final_embedding = self.fusion([frame_emb, output.last_hidden_state[:, 0, :]])
+            prediction = self.cls_head(final_embedding)
             return torch.argmax(prediction, dim=1)
 
     @torch.no_grad()
@@ -175,3 +181,19 @@ class SENet(nn.Module):
         x = torch.mul(x, gates)
 
         return x
+
+
+class ConcatDenseSE(nn.Module):
+    def __init__(self, multimodal_hidden_size, hidden_size, se_ratio, dropout):
+        super().__init__()
+        self.fusion = nn.Linear(multimodal_hidden_size, hidden_size)
+        self.fusion_dropout = nn.Dropout(dropout)
+        self.enhance = SENet(channels=hidden_size, ratio=se_ratio)
+
+    def forward(self, inputs):
+        embeddings = torch.cat(inputs, dim=1)
+        embeddings = self.fusion_dropout(embeddings)
+        embedding = self.fusion(embeddings)
+        embedding = self.enhance(embedding)
+
+        return embedding

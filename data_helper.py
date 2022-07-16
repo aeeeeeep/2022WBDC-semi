@@ -27,7 +27,7 @@ class DataLoaderX(DataLoader):
 def create_dataloaders(args):
     dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
     size = len(dataset)
-    # val_size = int(size * args.val_ratio)
+    val_size = int(size * args.val_ratio)
     # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size],
     #                                                            generator=torch.Generator().manual_seed(args.seed))
 
@@ -87,8 +87,8 @@ class MultiModalDataset(Dataset):
         # initialize the text_input tokenizer
         self.tokenizer = BertTokenizer.from_pretrained(args.bert_dir, use_fast=True, cache_dir=args.bert_cache)
         self.labels = None
-        # if not test_mode:
-        #     self.labels = [self.anns[idx]['category_id'] for idx in range(len(self.anns))]
+        if not test_mode:
+            self.labels = [self.anns[idx]['category_id'] for idx in range(len(self.anns))]
 
         # we use the standard frame_input transform as in the offifical Swin-Transformer.
         self.transform = Compose([
