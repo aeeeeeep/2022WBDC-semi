@@ -17,49 +17,20 @@ from category_id_map import lv2id_to_category_id
 import time
 from albef_model import ALBEF
 
+
+# Step 1, build model
 args = parse_args()
-
-args = parse_args()
-# 1. load data
-dataset = MultiModalDataset(args, args.test_annotation, args.test_zip_frames, test_mode=True)
-sampler = SequentialSampler(dataset)
-dataloader = DataLoader(dataset,
-                        batch_size=args.test_batch_size,
-                        sampler=sampler,
-                        drop_last=False,
-                        pin_memory=True,
-                        num_workers=args.num_workers,
-                        prefetch_factor=args.prefetch)
-
-# 1. 定义模型
-model = ALBEF(args).cuda()
-
-# 2.定义输入&输出
-input_names = ['input']
-output_names = ['output']
-
-x = iter(dataloader)
-x = next(x)
-a = torch.ones([32, 1]).to(torch.Tensor()).to("cuda")
-
-# 3.pt转onnx
-onnx_file = "./save/model.onnx"
-torch.onnx.export(model, (x['frame_input'].to(torch.Tensor()).to("cuda"),x['frame_mask'].to(torch.Tensor()).to("cuda"),x['text_input'].to(torch.Tensor()).to("cuda"),x['text_mask'].to(torch.Tensor()).to("cuda"), a),'model.onnx',export_params=True,verbose=True,input_names=input_names,output_names=output_names)
-
-
-# 4.检查onnx计算图
-net = onnx.load("./model.onnx")
-onnx.checker.check_model(net)           # 检查文件模型是否正确
-
-# 5.优化前后对比&验证
-# 优化前
+model = ALBEF(args)
+chkpt = torch.load('save/v2/model_epoch_2_mean_f1_0.6594.bin', map_location='cpu')['model_state_dict']
+model.load_state_dict(chkpt)
 model.eval()
-with torch.no_grad():
-    output1 = model(x['frame_input'].to(torch.Tensor()).to("cuda"),x['frame_mask'].to(torch.Tensor()).to("cuda"),x['text_input'].to(torch.Tensor()).to("cuda"),x['text_mask'].to(torch.Tensor()).to("cuda"), a)
 
-# 优化后
-inputs = (x['frame_input'].to(torch.Tensor()).to("cuda"),x['frame_mask'].to(torch.Tensor()).to("cuda"),x['text_input'].to(torch.Tensor()).to("cuda"),x['text_mask'].to(torch.Tensor()).to("cuda"), a)
-session = onnxruntime.InferenceSession("./model.onnx")
-session.get_modelmeta()
-output2 = session.run(['output'], {"input": inputs.cpu().numpy()})
-print("{}vs{}".format(output1.mean(), output2[0].mean()))
+# Step 2, export model to onnx （这里使用固定尺寸，动态尺寸容易出问题）
+frame_input = torch.zeros(10, 8, 3, 224, 224).to(torch.float32)
+frame_mask = torch.zeros(10, 8).to(torch.long)
+title_input = torch.zeros(10, 32).to(torch.long)
+title_mask = torch.zeros(10, 32).to(torch.long)
+torch.onnx.export(model, [frame_input,frame_mask,title_input,title_mask], './save/model.onnx', verbose=False, opset_version=12,
+                  input_names=["input_0"],
+                  output_names=["output_0"],
+                  do_constant_folding=True)

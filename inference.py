@@ -5,7 +5,8 @@ from torch.utils.data import SequentialSampler, DataLoader
 from config import parse_args
 from data_helper import MultiModalDataset
 from category_id_map import lv2id_to_category_id
-from model import MultiModal
+# from model import MultiModal
+from albef_model import ALBEF
 
 
 def inference():
@@ -22,7 +23,7 @@ def inference():
                             prefetch_factor=args.prefetch)
 
     # 2. load model
-    model = MultiModal(args)
+    model = ALBEF(args)
     checkpoint = torch.load(args.ckpt_file, map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     if torch.cuda.is_available():
@@ -33,7 +34,7 @@ def inference():
     predictions = []
     with torch.no_grad():
         for batch_id, batch in tqdm.tqdm(enumerate(dataloader)):
-            pred_label_id = model(inputs=batch, inference=True)
+            pred_label_id = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],label=1, alpha=0.4, train=False)
             predictions.extend(pred_label_id.cpu().numpy())
 
     # 4. dump results

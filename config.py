@@ -64,4 +64,9 @@ def parse_args():
     parser.add_argument('--swa_start', type=int, default=2, help="swa start epoch")
     parser.add_argument('--swa_savedmodel_path', type=str, default='save/')
 
+    # ========================== DDP =============================
+    parser.add_argument('--local_rank', type=int, default=-1)
+    parser.add_argument('--world_size', type=int, default=2)
+
+
     return parser.parse_args()

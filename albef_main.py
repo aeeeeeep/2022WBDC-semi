@@ -2,6 +2,8 @@ import logging
 import os
 import time
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 # import copy
 from tqdm import tqdm
 from albef_model import ALBEF
@@ -33,14 +35,6 @@ def validate(model, val_dataloader):
 
 
 def train_and_validate(args):
-    # # 为这个进程指定GPU
-    # torch.cuda.set_device(args.local_rank)
-    # # 初始化GPU通信方式NCLL和参数的获取方式，其中env表示环境变量
-    # # PyTorch实现分布式运算是通过NCLL进行显卡通信的
-    # torch.distributed.init_process_group(
-    #     backend='nccl',
-    #     rank=args.local_rank
-    # )
 
     # 1. load data
     train_dataloader, val_dataloader = create_dataloaders(args)
@@ -59,21 +53,16 @@ def train_and_validate(args):
 
     optimizer, scheduler = build_optimizer(args, model)
     if args.device == 'cuda':
-        model = torch.nn.parallel.DataParallel(model.to(args.device))
+        torch.distributed.init_process_group(backend='nccl',
+                                             world_size=args.world_size,
+                                             init_method='env://')
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device(f'cuda:{args.local_rank}')
 
-        # torch.cuda.set_device(args.local_rank)
-        # device = torch.device('cuda', args.local_rank)
-        # model.to(device)
-        # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        # model = torch.nn.parallel.DistributedDataParallel(
-        #     model,
-        #     device_ids=[args.local_rank],
-        #     output_device=args.local_rank,
-        #     find_unused_parameters=True,
-        # )
-        # torch.backends.cudnn.benchmark = True
-        # # 将会让程序在开始时花费一点额外时间，为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速
-        # # DistributedDataParallel可以将不同GPU上求得的梯度进行汇总，实现对模型GPU的更新
+        # model = torch.nn.parallel.DataParallel(model.to(args.device))
+        model = DDP(model,
+                    device_ids=[args.local_rank],
+                    output_device=args.local_rank).to(device)
 
     # 3. training
     step = 0

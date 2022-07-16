@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from functools import partial
 
 from swin import swin_tiny
 from category_id_map import CATEGORY_ID_LIST
-from transformers import BertModel, BertConfig
+from transformers import BertModel, BertConfig, BertTokenizer
+from vit import VisionTransformer
 
 
 class ALBEF(nn.Module):
@@ -14,11 +16,17 @@ class ALBEF(nn.Module):
         self.distill = True
 
         self.visual_backbone = swin_tiny(args.swin_pretrained_path)
+
+        # 图像编码器
+        # self.visual_encoder = VisionTransformer(
+        #     img_size=224, patch_size=16, embed_dim=768, depth=12, num_heads=12,
+        #     mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))
         self.nextvlad = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
                                  output_size=args.vlad_hidden_size, dropout=args.dropout)
         self.enhance = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
 
         bert_config = BertConfig.from_json_file('./config.json')
+        self.tokenizer = BertTokenizer.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
         self.text_encoder = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
         self.fusion = ConcatDenseSE(args.vlad_hidden_size + 768, 768, args.se_ratio, args.dropout)
 
@@ -29,6 +37,9 @@ class ALBEF(nn.Module):
         )
 
         if self.distill:
+            # self.visual_encoder_m = VisionTransformer(
+            #     img_size=224, patch_size=16, embed_dim=768, depth=12, num_heads=12,
+            #     mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))
             self.nextvlad_m = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
                                      output_size=args.vlad_hidden_size, dropout=args.dropout)
             self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
@@ -53,6 +64,7 @@ class ALBEF(nn.Module):
         frame_backbone = self.visual_backbone(frame_input)
         frame_emb = self.nextvlad(frame_backbone, frame_mask)
         frame_emb = self.enhance(frame_emb)
+        # frame_emb = self.visual_encoder(frame_input)
 
         if train:
             output = self.text_encoder(text_input,
@@ -66,8 +78,9 @@ class ALBEF(nn.Module):
             if self.distill:
                 with torch.no_grad():
                     self._momentum_update()
-                    frame_emb_m = self.nextvlad_m(frame_backbone, frame_mask)
-                    frame_emb_m = self.enhance_m(frame_emb_m)
+                    # frame_emb_m = self.nextvlad_m(frame_backbone, frame_mask)
+                    # frame_emb_m = self.enhance_m(frame_emb_m)
+                    frame_emb_m = self.visual_encoder(frame_input)
                     output_m = self.text_encoder_m(text_input,
                                                    attention_mask=text_mask,
                                                    encoder_hidden_states=frame_emb_m,

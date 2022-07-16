@@ -4,19 +4,20 @@ import torch.nn.functional as F
 
 from swin import swin_tiny
 from functools import partial
-from transformers import BertConfig, BertForMaskedLM
+from transformers import BertTokenizer, BertConfig
+from xbert import BertForMaskedLM
 
 
 class ALBEF_PRE(nn.Module):
     def __init__(self, args):
         super().__init__()
-
         self.visual_backbone = swin_tiny(args.swin_pretrained_path)
         self.nextvlad = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
                                  output_size=args.vlad_hidden_size, dropout=args.dropout)
         self.enhance = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
 
         bert_config = BertConfig.from_json_file('./config.json')
+        self.tokenizer = BertTokenizer.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
         self.text_encoder = BertForMaskedLM.from_pretrained(args.bert_dir, cache_dir=args.bert_cache, config=bert_config)
 
         self.vision_proj = nn.Linear(args.vlad_hidden_size, 768)
@@ -88,18 +89,18 @@ class ALBEF_PRE(nn.Module):
             sim_targets = torch.zeros(sim_i2t_m.size()).to(frame_input.device)
             sim_targets.fill_diagonal_(1)
 
-            sim_i2t_targets = alpha * F.softmax(sim_i2t_m, dim=1) + (1 - alpha) * sim_targets
-            sim_t2i_targets = alpha * F.softmax(sim_t2i_m, dim=1) + (1 - alpha) * sim_targets
+            # sim_i2t_targets = alpha * F.softmax(sim_i2t_m, dim=1) + (1 - alpha) * sim_targets
+            # sim_t2i_targets = alpha * F.softmax(sim_t2i_m, dim=1) + (1 - alpha) * sim_targets
 
         sim_i2t = frame_feat @ text_feat_all / self.temp
         sim_t2i = text_feat @ frame_feat_all / self.temp
-
-        loss_i2t = -torch.sum(F.log_softmax(sim_i2t, dim=1) * sim_i2t_targets, dim=1).mean()
-        loss_t2i = -torch.sum(F.log_softmax(sim_t2i, dim=1) * sim_t2i_targets, dim=1).mean()
-
-        loss_ita = (loss_i2t + loss_t2i) / 2
-
-        self._dequeue_and_enqueue(frame_feat_m, text_feat_m)
+        #
+        # loss_i2t = -torch.sum(F.log_softmax(sim_i2t, dim=1) * sim_i2t_targets, dim=1).mean()
+        # loss_t2i = -torch.sum(F.log_softmax(sim_t2i, dim=1) * sim_t2i_targets, dim=1).mean()
+        #
+        # loss_ita = (loss_i2t + loss_t2i) / 2
+        #
+        # self._dequeue_and_enqueue(frame_feat_m, text_feat_m)
 
         ###=================================###
         # forward the positve image-text pair
@@ -183,7 +184,8 @@ class ALBEF_PRE(nn.Module):
                                        )
         loss_mlm = mlm_output.loss
 
-        return loss_mlm, loss_ita, loss_itm
+        # return loss_mlm, loss_ita, loss_itm
+        return loss_mlm, loss_itm
 
     @torch.no_grad()
     def copy_params(self):

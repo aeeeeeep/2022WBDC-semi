@@ -12,13 +12,10 @@ def validate(model, val_dataloader):
     loss_mlm, loss_ita, loss_itm = [], [], []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss_mlm, loss_ita, loss_itm = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'])
-            loss_mlm.append(loss_mlm.mean().to('cpu').item())
-            loss_ita.append(loss_ita.mean().to('cpu').item())
-            loss_itm.append(loss_itm.mean().to('cpu').item())
+            loss_mlm, loss_itm = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'])
 
     model.train()
-    return sum(loss_mlm)/len(loss_mlm) + sum(loss_ita)/len(loss_ita) + 0.1 * sum(loss_itm)/len(loss_itm)
+    return sum(loss_mlm)/len(loss_mlm) + sum(loss_itm)/len(loss_itm)
 
 
 
@@ -45,11 +42,8 @@ def pretrain(args):
             for batch in train_dataloader:
                 model.train()
 
-                loss_mlm, loss_ita, loss_itm = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'])
-                loss_mlm = loss_mlm.mean() / accumulation_steps
-                loss_ita = loss_ita.mean() / accumulation_steps
-                loss_itm = loss_itm.mean() / accumulation_steps
-                loss = 3 * torch.log(loss_mlm + 1e-12) + 0.2 * torch.log(loss_ita + 1e-12) + torch.log(loss_itm + 1e-12)
+                loss_mlm, loss_itm = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'])
+                loss = loss_mlm + loss_itm
                 loss.backward()
 
                 optimizer.step()
@@ -66,13 +60,13 @@ def pretrain(args):
                         logging.info(f"Saveing model, val loss: {val_loss}")
                         state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
                         torch.save(
-                            {'step': step, 'model_state_dict': state_dict, 'loss_mlm': loss_mlm, 'loss_ita': loss_ita, 'loss_itm': loss_itm},
+                            {'step': step, 'model_state_dict': state_dict, 'loss_mlm': loss_mlm, 'loss_itm': loss_itm},
                             f'{args.savedmodel_path}/model_pretrain_best.bin')
 
                 if step % 10000 == 0:
                     state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
                     torch.save(
-                        {'epoch': epoch, 'model_state_dict': state_dict, 'loss_mlm': loss_mlm, 'loss_ita': loss_ita, 'loss_itm': loss_itm},
+                        {'epoch': epoch, 'model_state_dict': state_dict, 'loss_mlm': loss_mlm, 'loss_itm': loss_itm},
                         f'{args.savedpremodel_path}/model_pretrain_best_step{step}.bin')
                 _tqdm.set_postfix(loss='{:.3f}'.format(loss))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
                 _tqdm.update(1)  # 设置你每一次想让进度条更新的iteration 大小
