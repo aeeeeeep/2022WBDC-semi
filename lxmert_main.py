@@ -1,11 +1,9 @@
 import logging
 import os
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
-
 # import copy
 from tqdm import tqdm
-from albef_model import ALBEF
+from lxmert_model import LXMERT
 from config import parse_args
 from data_helper import create_dataloaders
 from utils.util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
@@ -21,7 +19,7 @@ def validate(model, val_dataloader):
     losses = []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['text_input'],batch['text_mask'],batch['label'])
             loss = loss.mean()
             predictions.extend(pred_label_id.cpu().numpy())
             labels.extend(label.cpu().numpy())
@@ -34,12 +32,20 @@ def validate(model, val_dataloader):
 
 
 def train_and_validate(args):
+    # # 为这个进程指定GPU
+    # torch.cuda.set_device(args.local_rank)
+    # # 初始化GPU通信方式NCLL和参数的获取方式，其中env表示环境变量
+    # # PyTorch实现分布式运算是通过NCLL进行显卡通信的
+    # torch.distributed.init_process_group(
+    #     backend='nccl',
+    #     rank=args.local_rank
+    # )
 
     # 1. load data
     train_dataloader, val_dataloader = create_dataloaders(args)
 
     # 2. build model and optimizers
-    model = ALBEF(args)
+    model = LXMERT(args)
 
     # swa_raw_model = copy.deepcopy(model)
 
@@ -52,16 +58,21 @@ def train_and_validate(args):
 
     optimizer, scheduler = build_optimizer(args, model)
     if args.device == 'cuda':
-        torch.distributed.init_process_group(backend='nccl',
-                                             world_size=args.world_size,
-                                             init_method='env://')
-        torch.cuda.set_device(args.local_rank)
-        device = torch.device(f'cuda:{args.local_rank}')
+        model = torch.nn.parallel.DataParallel(model.to(args.device))
 
-        # model = torch.nn.parallel.DataParallel(model.to(args.device))
-        model = DDP(model,
-                    device_ids=[args.local_rank],
-                    output_device=args.local_rank).to(device)
+        # torch.cuda.set_device(args.local_rank)
+        # device = torch.device('cuda', args.local_rank)
+        # model.to(device)
+        # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        # model = torch.nn.parallel.DistributedDataParallel(
+        #     model,
+        #     device_ids=[args.local_rank],
+        #     output_device=args.local_rank,
+        #     find_unused_parameters=True,
+        # )
+        # torch.backends.cudnn.benchmark = True
+        # # 将会让程序在开始时花费一点额外时间，为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速
+        # # DistributedDataParallel可以将不同GPU上求得的梯度进行汇总，实现对模型GPU的更新
 
     # 3. training
     step = 0
@@ -74,14 +85,14 @@ def train_and_validate(args):
             _tqdm.set_description('epoch: {}/{}'.format(epoch, args.max_epochs - 1))  # 设置前缀 一般为epoch的信息
             for batch in train_dataloader:
                 model.train()
-                loss, accuracy, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
+                loss, accuracy, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['text_input'],batch['text_mask'], batch['label'])
                 loss = loss.mean()
                 accuracy = accuracy.mean()
                 loss.backward()
 
                 '''fgm'''
                 fgm.attack()  # 在embedding上添加对抗扰动
-                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],batch['title_mask'], batch['label'])
+                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['text_input'],batch['text_mask'], batch['label'])
                 adv_loss = adv_loss.mean()
                 adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
                 fgm.restore()  # 恢复embedding参数
@@ -93,7 +104,7 @@ def train_and_validate(args):
                 #         model.zero_grad()
                 #     else:
                 #         pgd.restore_grad()
-                #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+                #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['text_input'],batch['text_mask'],batch['label'])
                 #     adv_loss = adv_loss.mean()
                 #     adv_loss.backward()
                 # pgd.restore()

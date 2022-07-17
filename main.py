@@ -1,16 +1,15 @@
 import logging
 import os
-import time
 import torch
 # import copy
 from tqdm import tqdm
 from model import MultiModal
 from config import parse_args
 from data_helper import create_dataloaders
-from util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
+from utils.util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
 # from pgd import PGD
-from fgm import FGM
-from ema import EMA
+from utils.fgm import FGM
+from utils.ema import EMA
 # from swa import swa
 
 def validate(model, val_dataloader):

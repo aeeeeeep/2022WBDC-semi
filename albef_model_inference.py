@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from functools import partial
 
-from swin import swin_tiny
+from utils.swin import swin_tiny
 from category_id_map import CATEGORY_ID_LIST
 from transformers import BertModel, BertConfig, BertTokenizer
 

@@ -1,5 +1,5 @@
 from category_id_map import category_id_to_lv2id
-from util import evaluate
+from utils.util import evaluate
 
 
 def evaluate_submission(result_file, ground_truth_file):

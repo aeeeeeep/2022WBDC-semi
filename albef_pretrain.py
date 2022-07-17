@@ -5,7 +5,7 @@ from tqdm import tqdm
 from albef_model_pretrain import ALBEF_PRE
 from config import parse_args
 from data_helper_pretrain import create_pretrain_dataloaders
-from util import setup_device, setup_seed, setup_logging, build_optimizer
+from utils.util import setup_device, setup_seed, setup_logging, build_optimizer
 
 def validate(model, val_dataloader):
     model.eval()

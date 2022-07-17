@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from swin import swin_tiny
-from functools import partial
+from utils.swin import swin_tiny
 from transformers import BertTokenizer, BertConfig
 from xbert import BertForMaskedLM
 

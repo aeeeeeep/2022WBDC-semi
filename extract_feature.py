@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.parallel import DataParallel
 from torchvision.transforms import Compose, Resize, CenterCrop, Normalize, ToTensor
 
-import swin
+from utils import swin
 
 
 class RawFrameDataset(Dataset):

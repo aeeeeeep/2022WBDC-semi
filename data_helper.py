@@ -157,6 +157,32 @@ class MultiModalDataset(Dataset):
         # text_token_type_ids = torch.zeros_like(text_input_ids)
         return text_input_ids, text_mask #, text_token_type_ids
 
+
+    def tokenize_text_tfidf(self, title: str, ocr_text: str, asr_text: str) -> tuple:
+        max_len = 128
+        if len(title) >= max_len:
+            title = title[:(int(max_len / 2))] + title[-(int(max_len / 2)):]
+        if len(ocr_text) >= max_len:
+            ocr_text = ocr_text[:(int(max_len / 2))] + ocr_text[-(int(max_len / 2)):]
+        if len(asr_text) >= max_len:
+            asr_text = asr_text[:(int(max_len / 2))] + asr_text[-(int(max_len / 2)):]
+
+        encoded_title = self.tokenizer(title, max_length=max_len, padding='max_length', truncation=True)
+        encoded_ocr = self.tokenizer(ocr_text, max_length=max_len, padding='max_length', truncation=True)
+        encoded_asr = self.tokenizer(asr_text, max_length=max_len, padding='max_length', truncation=True)
+
+        text_input_ids = torch.LongTensor(
+            [self.tokenizer.cls_token_id] + encoded_title['input_ids'] + [self.tokenizer.sep_token_id]
+            + encoded_ocr['input_ids'] + [self.tokenizer.sep_token_id] + encoded_asr['input_ids']
+            + [self.tokenizer.sep_token_id]
+        )
+        text_mask = torch.LongTensor(
+            [1, ] + encoded_title['attention_mask'] + [1, ] + encoded_ocr['attention_mask'] + [1, ]
+            + encoded_asr['attention_mask'] + [1, ]
+        )
+        # text_token_type_ids = torch.zeros_like(text_input_ids)
+        return text_input_ids, text_mask #, text_token_type_ids
+
     def __getitem__(self, idx: int) -> dict:
         # Step 1, load visual features from zipfile.
         frame_input, frame_mask = self.get_visual_frames(idx)
@@ -165,14 +191,14 @@ class MultiModalDataset(Dataset):
         title, asr = self.anns[idx]['title'], self.anns[idx]['asr']
         ocr = sorted(self.anns[idx]['ocr'], key=lambda x: x['time'])
         ocr = ','.join([t['text'] for t in ocr])
-        title_input, title_mask = self.tokenize_text(title, ocr, asr)
+        text_input, text_mask = self.tokenize_text(title, ocr, asr)
 
         # Step 3, summarize into a dictionary
         data = dict(
             frame_input=frame_input,
             frame_mask=frame_mask,
-            title_input=title_input,
-            title_mask=title_mask,
+            text_input=text_input,
+            text_mask=text_mask,
             # title_token_type_ids=title_token_type_ids
         )
         # Step 4, load label if not test mode

@@ -39,11 +39,11 @@
 - [inference.py](inference.py) 是生成提交文件的示例代码
 - [main.py](main.py) 是训练模型的入口
 - [model.py](model.py) 是baseline模型
-- [util.py](util.py) 是util函数
+- [util.py](utils/util.py) 是util函数
 
 区别在于，复赛不再提供预提取好的视觉特征，因此需要选手在训练、测试中自行提取视觉特征。在代码中，增加了如下文件：
 
-- [swin.py](swin.py) 初赛所用的 Swin-Transformer （tiny） 视觉特征提取器
+- [swin.py](utils/swin.py) 初赛所用的 Swin-Transformer （tiny） 视觉特征提取器
 - [extract_feature.py](extract_feature.py) 提取视觉特征的函数（仅供参考，实际是端到端的训练，并未单独提取特征）
 
 在 `data_helper.py` 以及 `model.py` 中，将直接使用 swin 模型来端到端地提取视觉特征。

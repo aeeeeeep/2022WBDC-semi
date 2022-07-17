@@ -1,40 +1,41 @@
+import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertModel
+from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertEmbeddings, BertModel
 
 from utils.swin import swin_tiny
+from utils.modeling import LXRTEncoder, LXRTModel
 from category_id_map import CATEGORY_ID_LIST
 
 
-class MultiModal(nn.Module):
+class LXMERT(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.bert = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
         self.visual_backbone = swin_tiny(args.swin_pretrained_path)
-        self.nextvlad = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
-                                 output_size=args.vlad_hidden_size, dropout=args.dropout)
-        self.enhance = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
-        bert_output_size = 768
-        self.fusion = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio, args.dropout)
-        self.classifier = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
+        # self.nextvlad = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
+        #                          output_size=args.vlad_hidden_size, dropout=args.dropout)
+        # self.enhance = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
+        self.video_dense = nn.Linear(768, 768)
 
-        self.distill = True
+        self.encoder = LXRTModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+
+        # self.encoder = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+        # self.classifier = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
+        self.classifier = nn.Sequential(
+                  nn.Linear(768, 768),
+                  nn.ReLU(),
+                  nn.Linear(768, len(CATEGORY_ID_LIST))
+                )
+
+        self.distill = False
 
         if self.distill:
-            self.bert_m = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
-            self.visual_backbone_m = swin_tiny(args.swin_pretrained_path)
-            self.nextvlad_m = NeXtVLAD(args.frame_embedding_size, args.vlad_cluster_size,
-                                     output_size=args.vlad_hidden_size, dropout=args.dropout)
-            self.enhance_m = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
-            bert_output_size = 768
-            self.fusion_m = ConcatDenseSE(args.vlad_hidden_size + bert_output_size, args.fc_size, args.se_ratio,
-                                        args.dropout)
+            self.encoder_m = LXRTModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+            # self.encoder_m = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
             self.classifier_m = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
 
-            self.model_pairs = [[self.bert, self.bert_m],
-                                [self.enhance, self.enhance_m],
-                                [self.fusion, self.fusion_m],
+            self.model_pairs = [[self.encoder, self.encoder_m],
                                 [self.classifier, self.classifier_m],
                                 ]
             self.copy_params()
@@ -43,24 +44,19 @@ class MultiModal(nn.Module):
     def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, inference=False):
         frame_inputs = self.visual_backbone(frame_input)
 
-        bert_embedding = self.bert(text_input, text_mask)['pooler_output']
+        # frame_fea = self.nextvlad(frame_inputs, frame_mask)
+        # frame_fea = self.enhance(frame_fea)
+        frame_fea = self.video_dense(frame_inputs)
 
-        vision_embedding = self.nextvlad(frame_inputs, frame_mask)
-        vision_embedding = self.enhance(vision_embedding)
-
-        final_embedding = self.fusion([vision_embedding, bert_embedding])
-        prediction = self.classifier(final_embedding)
+        _, encoder_outputs = self.encoder(input_ids=text_input, visual_feats=frame_fea, visual_attention_mask=frame_mask)
+        # encoder_outputs = self.encoder(frame_fea, frame_mask, text_input, text_mask)
+        prediction = self.classifier(encoder_outputs)
 
         if self.distill:
             with torch.no_grad():
                 self._momentum_update()
-                bert_embedding_m = self.bert(text_input, text_mask)['pooler_output']
-
-                vision_embedding_m = self.nextvlad(frame_inputs, frame_mask)
-                vision_embedding_m = self.enhance(vision_embedding_m)
-
-                final_embedding_m = self.fusion([vision_embedding_m, bert_embedding_m])
-                prediction_m = self.classifier(final_embedding_m)
+                encoder_outputs_m = self.encoder_m(frame_fea, frame_mask, text_input, text_mask)
+                prediction_m = self.classifier(encoder_outputs_m)
 
             label = label.squeeze(dim=1)
             loss = (1 - alpha) * F.cross_entropy(prediction, label, label_smoothing=0.1) - alpha * torch.sum(
@@ -141,7 +137,6 @@ class NeXtVLAD(nn.Module):
         vlad = self.fc(vlad)
         return vlad
 
-
 class SENet(nn.Module):
     def __init__(self, channels, ratio=8):
         super().__init__()
@@ -159,18 +154,45 @@ class SENet(nn.Module):
 
         return x
 
+class Bert_encoder(BertPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
 
-class ConcatDenseSE(nn.Module):
-    def __init__(self, multimodal_hidden_size, hidden_size, se_ratio, dropout):
-        super().__init__()
-        self.fusion = nn.Linear(multimodal_hidden_size, hidden_size)
-        self.fusion_dropout = nn.Dropout(dropout)
-        self.enhance = SENet(channels=hidden_size, ratio=se_ratio)
+        self.embeddings = BertEmbeddings(config)
+        self.lxmert_encoder = LXRTEncoder(config)
+        self.text_encoder = BertModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
 
-    def forward(self, inputs):
-        embeddings = torch.cat(inputs, dim=1)
-        embeddings = self.fusion_dropout(embeddings)
-        embedding = self.fusion(embeddings)
-        embedding = self.enhance(embedding)
 
-        return embedding
+        self.init_weights()
+
+    def get_input_embeddings(self):
+        return self.embeddings.word_embeddings
+
+    def set_input_embeddings(self, value):
+        self.embeddings.word_embeddings = value
+
+    def _prune_heads(self, heads_to_prune):
+        for layer, heads in heads_to_prune.items():
+            self.encoder.layer[layer].attention.prune_heads(heads)
+
+    def forward(self, frame_fea, frame_mask, text_input, text_mask):
+        text_emb = self.embeddings(input_ids=text_input)
+        frame_emb = self.embeddings(inputs_embeds=frame_fea)
+        text_feats, frame_feats = self.lxmert_encoder(text_emb, text_mask, frame_emb, frame_mask)
+
+        return encoder_outputs
+
+
+
+
+class Dict2Obj(dict):
+    def __getattr__(self, key):
+        print('getattr is called')
+        if key not in self:
+            return None
+        else:
+            value = self[key]
+            if isinstance(value,dict):
+                value = Dict2Obj(value)
+            return

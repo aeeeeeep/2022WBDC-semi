@@ -11,7 +11,7 @@ class MaskLM(object):
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:
         """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
+        Prepare masked tokens inputs/labels for masked language modeling.py: 80% MASK, 10% random, 10% original.
         """
         labels = inputs.clone()
         # We sample a few tokens in each sequence for MLM training (with probability `self.mlm_probability`)
