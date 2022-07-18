@@ -49,6 +49,7 @@ class MultiModal(nn.Module):
         vision_embedding = self.enhance(vision_embedding)
 
         final_embedding = self.fusion([vision_embedding, bert_embedding])
+        print(final_embedding.size())
         prediction = self.classifier(final_embedding)
 
         if self.distill:

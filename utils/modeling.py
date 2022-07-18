@@ -993,7 +993,7 @@ class LXRTFeatureExtraction(BertPreTrainedModel):
     """
     BERT model for classification.
     """
-    def __init__(self, config, mode='lxr'):
+    def __init__(self, config, mode='x'):
         """
 
         :param config:

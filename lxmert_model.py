@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertEmbeddings, BertModel
 
 from utils.swin import swin_tiny
-from utils.modeling import LXRTEncoder, LXRTModel
+from utils.modeling import LXRTEncoder, LXRTModel, LXRTFeatureExtraction
 from category_id_map import CATEGORY_ID_LIST
 
 
@@ -18,70 +18,47 @@ class LXMERT(nn.Module):
         # self.enhance = SENet(channels=args.vlad_hidden_size, ratio=args.se_ratio)
         self.video_dense = nn.Linear(768, 768)
 
-        self.encoder = LXRTModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
+        self.encoder = LXRTFeatureExtraction.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
 
+        # self.fusion = ConcatDenseSE(768, 768, args.se_ratio, args.dropout)
         # self.encoder = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
         # self.classifier = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
-        self.classifier = nn.Sequential(
-                  nn.Linear(768, 768),
-                  nn.ReLU(),
-                  nn.Linear(768, len(CATEGORY_ID_LIST))
-                )
+        # self.classifier = nn.Sequential(
+        #           nn.Linear(768, 768),
+        #           nn.ReLU(),
+        #           nn.Linear(768, len(CATEGORY_ID_LIST))
+        #         )
+        self.drop = nn.Dropout(p=0.3)
+        self.classifier = nn.Linear(768, len(CATEGORY_ID_LIST))
 
-        self.distill = False
-
-        if self.distill:
-            self.encoder_m = LXRTModel.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
-            # self.encoder_m = Bert_encoder.from_pretrained(args.bert_dir, cache_dir=args.bert_cache)
-            self.classifier_m = nn.Linear(args.fc_size, len(CATEGORY_ID_LIST))
-
-            self.model_pairs = [[self.encoder, self.encoder_m],
-                                [self.classifier, self.classifier_m],
-                                ]
-            self.copy_params()
-            self.momentum = 0.995
-
-    def forward(self, frame_input, frame_mask, text_input, text_mask, label, alpha=0.4, inference=False):
+    def forward(self, frame_input, frame_mask, text_input, text_mask, label=1, inference=False):
         frame_inputs = self.visual_backbone(frame_input)
 
         # frame_fea = self.nextvlad(frame_inputs, frame_mask)
         # frame_fea = self.enhance(frame_fea)
         frame_fea = self.video_dense(frame_inputs)
 
-        _, encoder_outputs = self.encoder(input_ids=text_input, visual_feats=frame_fea, visual_attention_mask=frame_mask)
-        # encoder_outputs = self.encoder(frame_fea, frame_mask, text_input, text_mask)
-        prediction = self.classifier(encoder_outputs)
-
-        if self.distill:
-            with torch.no_grad():
-                self._momentum_update()
-                encoder_outputs_m = self.encoder_m(frame_fea, frame_mask, text_input, text_mask)
-                prediction_m = self.classifier(encoder_outputs_m)
-
-            label = label.squeeze(dim=1)
-            loss = (1 - alpha) * F.cross_entropy(prediction, label, label_smoothing=0.1) - alpha * torch.sum(
-                F.log_softmax(prediction, dim=1) * F.softmax(prediction_m, dim=1), dim=1).mean()
-            pred_label_id = torch.argmax(prediction, dim=1)
-            accuracy = (label == pred_label_id).float().sum() / label.shape[0]
-            return loss, accuracy, pred_label_id, label
+        encoder_outputs = self.encoder(input_ids=text_input, attention_mask=text_mask, visual_feats=frame_fea, visual_attention_mask=frame_mask)
+        output = self.drop(encoder_outputs)
+        prediction = self.classifier(output)
 
         if inference:
             return torch.argmax(prediction, dim=1)
         else:
             return self.cal_loss(prediction, label)
 
-    @torch.no_grad()
-    def copy_params(self):
-        for model_pair in self.model_pairs:
-            for param, param_m in zip(model_pair[0].parameters(), model_pair[1].parameters()):
-                param_m.data.copy_(param.data)  # initialize
-                param_m.requires_grad = False  # not update by gradient
-
-    @torch.no_grad()
-    def _momentum_update(self):
-        for model_pair in self.model_pairs:
-            for param, param_m in zip(model_pair[0].parameters(), model_pair[1].parameters()):
-                param_m.data = param_m.data * self.momentum + param.data * (1. - self.momentum)
+    # @torch.no_grad()
+    # def copy_params(self):
+    #     for model_pair in self.model_pairs:
+    #         for param, param_m in zip(model_pair[0].parameters(), model_pair[1].parameters()):
+    #             param_m.data.copy_(param.data)  # initialize
+    #             param_m.requires_grad = False  # not update by gradient
+    #
+    # @torch.no_grad()
+    # def _momentum_update(self):
+    #     for model_pair in self.model_pairs:
+    #         for param, param_m in zip(model_pair[0].parameters(), model_pair[1].parameters()):
+    #             param_m.data = param_m.data * self.momentum + param.data * (1. - self.momentum)
 
     @staticmethod
     def cal_loss(prediction, label):
@@ -183,7 +160,20 @@ class Bert_encoder(BertPreTrainedModel):
 
         return encoder_outputs
 
+class ConcatDenseSE(nn.Module):
+    def __init__(self, multimodal_hidden_size, hidden_size, se_ratio, dropout):
+        super().__init__()
+        self.fusion = nn.Linear(multimodal_hidden_size, hidden_size)
+        self.fusion_dropout = nn.Dropout(dropout)
+        self.enhance = SENet(channels=hidden_size, ratio=se_ratio)
 
+    def forward(self, inputs):
+        embeddings = torch.cat(inputs, dim=1)
+        embeddings = self.fusion_dropout(embeddings)
+        embedding = self.fusion(embeddings)
+        embedding = self.enhance(embedding)
+
+        return embedding
 
 
 class Dict2Obj(dict):
@@ -196,3 +186,15 @@ class Dict2Obj(dict):
             if isinstance(value,dict):
                 value = Dict2Obj(value)
             return
+
+class MeanPooling(nn.Module):
+    def __init__(self):
+        super(MeanPooling, self).__init__()
+
+    def forward(self, last_hidden_state, attention_mask):
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+        sum_mask = input_mask_expanded.sum(1)
+        sum_mask = torch.clamp(sum_mask, min=1e-9)
+        mean_embeddings = sum_embeddings / sum_mask
+        return mean_embeddings

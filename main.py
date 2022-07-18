@@ -19,7 +19,7 @@ def validate(model, val_dataloader):
     losses = []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['text_input'],batch['text_mask'],batch['label'])
             loss = loss.mean()
             predictions.extend(pred_label_id.cpu().numpy())
             labels.extend(label.cpu().numpy())
@@ -85,16 +85,16 @@ def train_and_validate(args):
             _tqdm.set_description('epoch: {}/{}'.format(epoch, args.max_epochs - 1))  # 设置前缀 一般为epoch的信息
             for batch in train_dataloader:
                 model.train()
-                loss, accuracy, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],
-                                             batch['title_mask'], batch['label'])
+                loss, accuracy, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['text_input'],
+                                             batch['text_mask'], batch['label'])
                 loss = loss.mean()
                 accuracy = accuracy.mean()
                 loss.backward()
 
                 '''fgm'''
                 fgm.attack()  # 在embedding上添加对抗扰动
-                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['title_input'],
-                                          batch['title_mask'], batch['label'])
+                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['text_input'],
+                                          batch['text_mask'], batch['label'])
                 adv_loss = adv_loss.mean()
                 adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
                 fgm.restore()  # 恢复embedding参数
@@ -106,7 +106,7 @@ def train_and_validate(args):
                 #         model.zero_grad()
                 #     else:
                 #         pgd.restore_grad()
-                #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['title_input'],batch['title_mask'],batch['label'])
+                #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['text_input'],batch['text_mask'],batch['label'])
                 #     adv_loss = adv_loss.mean()
                 #     adv_loss.backward()
                 # pgd.restore()
