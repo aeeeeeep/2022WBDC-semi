@@ -107,11 +107,9 @@ class MultiModalDataset(Dataset):
     def get_visual_frames(self, idx: int) -> tuple:
         # read data from zipfile
         vid = self.anns[idx]['id']
-
         zip_path = os.path.join(self.zip_frame_dir, f'{vid[-3:]}/{vid}.zip')
         handler = zipfile.ZipFile(zip_path, 'r')
         namelist = sorted(handler.namelist())
-
 
         num_frames = len(namelist)
         frame = torch.zeros((self.max_frame, 3, 224, 224), dtype=torch.float32)
@@ -120,17 +118,23 @@ class MultiModalDataset(Dataset):
             # load all frame
             select_inds = list(range(num_frames))
         else:
-            step = num_frames // self.max_frame
-            select_inds = list(range(0, num_frames, step))
-            select_inds = select_inds[:self.max_frame]
-
+            # if the number of frames exceeds the limitation, we need to sample
+            # the frames.
+            if self.test_mode:
+                # uniformly sample when test mode is True
+                step = num_frames // self.max_frame
+                select_inds = list(range(0, num_frames, step))
+                select_inds = select_inds[:self.max_frame]
+            else:
+                # randomly sample when test mode is False
+                select_inds = list(range(num_frames))
+                random.shuffle(select_inds)
+                select_inds = select_inds[:self.max_frame]
+                select_inds = sorted(select_inds)
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
             img = Image.open(BytesIO(img_content))
-            # img_stream = BytesIO(img_content)
-            # img = cv2.imdecode(np.frombuffer(img_stream.read(), np.uint8), 1)
-
             img_tensor = self.transform(img)
             frame[i] = img_tensor
         return frame, mask
@@ -251,14 +255,19 @@ def resample(dataset):
 
 # 计算字符串的TF-IDF值的方法
 def count_tfidf(str):
-    sentences = str.split()
-    sent_words = [list(jieba.cut(sent0)) for sent0 in sentences]
-    document = ["".join(sent0) for sent0 in sent_words]
-    tfidf_model = TfidfVectorizer(analyzer="char", token_pattern=r"(?u)\b\w+\b", ngram_range=(1,2),  stop_words=["是", "的", "嗯", "哦", "呀"]).fit(document)
-    feature = tfidf_model.get_feature_names()
-    #每一行指定特征的tf-idf值
-    sparse_result = tfidf_model.transform(document)
-    weight = sparse_result.toarray()
+    try:
+        sentences = str.split()
+        sent_words = [list(jieba.cut(sent0)) for sent0 in sentences]
+        document = ["".join(sent0) for sent0 in sent_words]
+        tfidf_model = TfidfVectorizer(analyzer="word", token_pattern=r"(?u)\b\w+\b",
+                                      stop_words=["是", "的", "嗯", "呀"]).fit(document)
+        feature = tfidf_model.get_feature_names()
+        # 每一行指定特征的tf-idf值
+        sparse_result = tfidf_model.transform(document)
+        weight = sparse_result.toarray()
+    except ValueError:
+        featureList = []
+        return featureList
 
     feature_TFIDF = {}
     for i in range(len(weight)):

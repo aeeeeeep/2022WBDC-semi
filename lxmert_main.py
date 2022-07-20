@@ -1,12 +1,6 @@
 import logging
 import os
 import torch
-import warnings
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    # call some deprecated functions
-# import copy
 from tqdm import tqdm
 from lxmert_model import LXMERT
 from config import parse_args
@@ -109,38 +103,39 @@ def train_and_validate(args):
                 #     logging.info(
                 #         f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
 
-                if step > 6000 & step % 2000 == 0:
-                    loss, results = validate(model, val_dataloader)
-                    results = {k: round(v, 4) for k, v in results.items()}
-                    logging.info(f"Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
-
-                    mean_f1 = results['mean_f1']
-                    if mean_f1 > best_score:
-                        best_score = mean_f1
-                        state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
-                        torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
-                                   f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
-
-                _tqdm.set_postfix(loss='{:.3f}'.format(loss),
-                                  accuracy='{:.3f}'.format(accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
+                _tqdm.set_postfix(loss='{:.3f}'.format(loss),accuracy='{:.3f}'.format(accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
                 _tqdm.update(1)  # 设置你每一次想让进度条更新的iteration 大小
 
-        ema.apply_shadow()
+            if (step > 6000) and (step % 2000 == 0):
+                loss, results = validate(model, val_dataloader)
+                results = {k: round(v, 4) for k, v in results.items()}
+                logging.info(f"Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
 
-        # 4. validation
-        loss, results = validate(model, val_dataloader)
-        results = {k: round(v, 4) for k, v in results.items()}
-        logging.info(f"Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
+                mean_f1 = results['mean_f1']
+                if mean_f1 > best_score:
+                    best_score = mean_f1
+                    state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
+                    torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
+                               f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
 
-        # 5. save checkpoint
-        mean_f1 = results['mean_f1']
-        if mean_f1 > best_score:
-            best_score = mean_f1
-            state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
-            torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
-                       f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
-        ema.restore()
-    # swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
+    ema.apply_shadow()
+
+    # 4. validation
+    loss, results = validate(model, val_dataloader)
+    results = {k: round(v, 4) for k, v in results.items()}
+    logging.info(f"Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
+
+    # 5. save checkpoint
+    mean_f1 = results['mean_f1']
+    if mean_f1 > best_score:
+        best_score = mean_f1
+        state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
+        torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
+                   f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
+    ema.restore()
+
+
+# swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
 
 
 def main():
