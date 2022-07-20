@@ -8,13 +8,14 @@
 * label smooth
 * Resample
 * 双流 albert
-* PIL 换 opencv
+* 双流 lxmert
+* torch 2 onnx 2 trt fp16
+* tfidf
+* AdamW 换 BertAdam
 
 ### TODO
 
 * 预训练: mlm + itm
-* swin 换 cswin
-* torch 2 onnx 2 trt
 * 调参
 
 ## [2022中国高校计算机大赛-微信大数据挑战赛](https://algo.weixin.qq.com/)

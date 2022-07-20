@@ -543,6 +543,7 @@ class LXRTEncoder(nn.Module):
             [BertLayer(config) for _ in range(self.num_r_layers)]
         )
 
+
     def forward(self, lang_feats, lang_attention_mask,
                 visn_feats, visn_attention_mask=None):
         # Run visual embedding layer
@@ -884,7 +885,7 @@ class LXRTModel(BertPreTrainedModel):
             visn_attention_mask=extended_visual_attention_mask)
         pooled_output = self.pooler(lang_feats)
 
-        return (lang_feats, visn_feats), pooled_output
+        return pooled_output
 
 
 class LXRTPretraining(BertPreTrainedModel):

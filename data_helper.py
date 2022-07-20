@@ -19,6 +19,9 @@ from collections import Counter
 
 from category_id_map import category_id_to_lv2id
 
+import jieba
+from sklearn.feature_extraction.text import CountVectorizer,TfidfVectorizer
+
 
 class DataLoaderX(DataLoader):
     def __iter__(self):
@@ -50,7 +53,7 @@ def create_dataloaders(args):
     train_dataloader = dataloader_class(train_dataset,
                                         batch_size=args.batch_size,
                                         sampler=train_sampler,
-                                        drop_last=True,
+                                        drop_last=False,
                                         # **kwargs
                                         )
     val_dataloader = dataloader_class(val_dataset,
@@ -154,22 +157,38 @@ class MultiModalDataset(Dataset):
             [1, ] + encoded_title['attention_mask'] + [1, ] + encoded_ocr['attention_mask'] + [1, ]
             + encoded_asr['attention_mask'] + [1, ]
         )
+
         # text_token_type_ids = torch.zeros_like(text_input_ids)
         return text_input_ids, text_mask #, text_token_type_ids
 
 
     def tokenize_text_tfidf(self, title: str, ocr_text: str, asr_text: str) -> tuple:
         max_len = 128
-        if len(title) >= max_len:
-            title = title[:(int(max_len / 2))] + title[-(int(max_len / 2)):]
+        tfidf_str_title = ''
+        tfidf_str_ocr = ''
+        tfidf_str_asr = ''
+
+        if len(title)<2:
+            tfidf_str_title = ''
+        else:
+            title_tfidf = count_tfidf(title + ocr_text + asr_text)
+            for i in range(title_tfidf.__len__()):
+                tfidf_str_title = tfidf_str_title + title_tfidf[i][0] + " "
+            if len(tfidf_str_title) >= max_len/2:
+                tfidf_str_title = tfidf_str_title[:(int(max_len/2))]
+            if len(title) >= max_len/2:
+                title = title[:(int(max_len/2))]
+            tfidf_str_title = title + tfidf_str_title
+
+
         if len(ocr_text) >= max_len:
             ocr_text = ocr_text[:(int(max_len / 2))] + ocr_text[-(int(max_len / 2)):]
         if len(asr_text) >= max_len:
             asr_text = asr_text[:(int(max_len / 2))] + asr_text[-(int(max_len / 2)):]
 
-        encoded_title = self.tokenizer(title, max_length=max_len, padding='max_length', truncation=True)
-        encoded_ocr = self.tokenizer(ocr_text, max_length=max_len, padding='max_length', truncation=True)
-        encoded_asr = self.tokenizer(asr_text, max_length=max_len, padding='max_length', truncation=True)
+        encoded_title = self.tokenizer(tfidf_str_title, max_length=max_len, padding='max_length', truncation=True)
+        encoded_ocr = self.tokenizer(tfidf_str_ocr, max_length=max_len, padding='max_length', truncation=True)
+        encoded_asr = self.tokenizer(tfidf_str_asr, max_length=max_len, padding='max_length', truncation=True)
 
         text_input_ids = torch.LongTensor(
             [self.tokenizer.cls_token_id] + encoded_title['input_ids'] + [self.tokenizer.sep_token_id]
@@ -180,6 +199,7 @@ class MultiModalDataset(Dataset):
             [1, ] + encoded_title['attention_mask'] + [1, ] + encoded_ocr['attention_mask'] + [1, ]
             + encoded_asr['attention_mask'] + [1, ]
         )
+
         # text_token_type_ids = torch.zeros_like(text_input_ids)
         return text_input_ids, text_mask #, text_token_type_ids
 
@@ -191,20 +211,21 @@ class MultiModalDataset(Dataset):
         title, asr = self.anns[idx]['title'], self.anns[idx]['asr']
         ocr = sorted(self.anns[idx]['ocr'], key=lambda x: x['time'])
         ocr = ','.join([t['text'] for t in ocr])
-        text_input, text_mask = self.tokenize_text(title, ocr, asr)
+        text_input, text_mask = self.tokenize_text_tfidf(title, ocr, asr)
 
         # Step 3, summarize into a dictionary
-        data = dict(
-            frame_input=frame_input,
-            frame_mask=frame_mask,
-            text_input=text_input,
-            text_mask=text_mask,
-            # title_token_type_ids=title_token_type_ids
-        )
+        # data = dict(
+        #     frame_input=frame_input,
+        #     frame_mask=frame_mask,
+        #     text_input=text_input,
+        #     text_mask=text_mask,
+        #     # title_token_type_ids=title_token_type_ids
+        # )
+        data = (frame_input, frame_mask, text_input, text_mask)
         # Step 4, load label if not test mode
         if not self.test_mode:
             label = category_id_to_lv2id(self.anns[idx]['category_id'])
-            data['label'] = torch.LongTensor([label])
+            data = data + (torch.LongTensor([label]),)
 
         return data
 
@@ -227,3 +248,26 @@ def resample(dataset):
 
     dataset.indices = indices_resample
     print("trainset len:", len(dataset))
+
+# 计算字符串的TF-IDF值的方法
+def count_tfidf(str):
+    sentences = str.split()
+    sent_words = [list(jieba.cut(sent0)) for sent0 in sentences]
+    document = ["".join(sent0) for sent0 in sent_words]
+    tfidf_model = TfidfVectorizer(analyzer="char", token_pattern=r"(?u)\b\w+\b", ngram_range=(1,2),  stop_words=["是", "的", "嗯", "哦", "呀"]).fit(document)
+    feature = tfidf_model.get_feature_names()
+    #每一行指定特征的tf-idf值
+    sparse_result = tfidf_model.transform(document)
+    weight = sparse_result.toarray()
+
+    feature_TFIDF = {}
+    for i in range(len(weight)):
+        for j in range(len(feature)):
+            if feature[j] not in feature_TFIDF:
+                feature_TFIDF[feature[j]] = weight[i][j]
+            else:
+                feature_TFIDF[feature[j]] = max(feature_TFIDF[feature[j]], weight[i][j])
+
+    featureList = sorted(feature_TFIDF.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
+    return featureList
+

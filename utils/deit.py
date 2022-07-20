@@ -263,13 +263,18 @@ class vit_models(nn.Module):
         return x[:, 0]
 
     def forward(self, x):
-
+        if x.dim() == 5:
+            # support multi-frame inputs
+            B, N, C, H, W = x.shape
+            x = x.view(B * N, C, H, W)
+            output_shape = (B, N, -1)
+        else:
+            output_shape = (x.shape[0], -1)
         x = self.forward_features(x)
-
         if self.dropout_rate:
             x = F.dropout(x, p=float(self.dropout_rate), training=self.training)
         x = self.head(x)
-
+        x = x.view(*output_shape)
         return x
 
 
@@ -312,17 +317,19 @@ def deit_base_patch16_LS(pretrained=False, img_size=224, pretrained_21k=False, *
         img_size=img_size, patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), block_layers=Layer_scale_init_Block, **kwargs)
     if pretrained:
-        name = 'https://dl.fbaipublicfiles.com/deit/deit_3_base_' + str(img_size) + '_'
-        if pretrained_21k:
-            name += '21k.pth'
-        else:
-            name += '1k.pth'
-
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=name,
-            map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(checkpoint["model"])
+        # name = 'https://dl.fbaipublicfiles.com/deit/deit_3_base_' + str(img_size) + '_'
+        # if pretrained_21k:
+        #     name += '21k.pth'
+        # else:
+        #     name += '1k.pth'
+        #
+        #checkpoint = torch.hub.load_state_dict_from_url(
+        #     url=name,
+        #     map_location="cpu", check_hash=True
+        # )
+        # model.load_state_dict(checkpoint["model"])
+        checkpoint = torch.load("opensource_models/deit_3_base_224_1k.pth", map_location='cpu')['model']
+        model.load_state_dict(checkpoint)
     return model
 
 

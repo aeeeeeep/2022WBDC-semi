@@ -4,3 +4,5 @@ sklearn
 tqdm
 timm
 transformers>=4.0.0
+prefetch_generator
+jieba
