@@ -30,7 +30,7 @@ class DataLoaderX(DataLoader):
 
 def create_dataloaders(args, pretrain=False):
     if pretrain:
-        dataset = MultiModalDataset(args, args.pretrain_annotation, args.pretrain_zip_feats, test_mode=True)
+        dataset = MultiModalDataset(args, args.pretrain_annotation, args.pretrain_zip_frames, test_mode=True)
         size = len(dataset)
         val_size = 10000
         train_dataset, val_dataset = torch.utils.data.dataset.random_split(dataset, [size - val_size, val_size])

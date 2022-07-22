@@ -2,7 +2,7 @@ import logging
 import os
 import torch
 from tqdm import tqdm
-from lxmert_model import LXMERT
+from lxmert_model_pretrain import LXMERT_PRE
 from config import parse_args
 from data_helper import create_dataloaders
 from utils.util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
@@ -25,7 +25,7 @@ def train_and_validate(args):
     train_dataloader, val_dataloader = create_dataloaders(args, pretrain=True)
 
     # 2. build model and optimizers
-    model = LXMERT(args)
+    model = LXMERT_PRE(args)
 
     num_total_steps = len(train_dataloader) * args.max_epochs
 

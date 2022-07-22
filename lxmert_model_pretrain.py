@@ -27,7 +27,7 @@ class LXMERT_PRE(nn.Module):
         # mlm
         self.lm = MaskLM(tokenizer_path=args.bert_dir)
         self.num_class = 10000
-        self.vocab_size = 768
+        self.vocab_size = 21128
 
         # itm
         self.sv = ShuffleVideo()
@@ -63,18 +63,15 @@ class LXMERT_PRE(nn.Module):
                                                       visual_feats=frame_fea
                                                       )
 
-        features_mean = torch.mean(features, 1)
-        embedding = self.newfc_hidden(features_mean)
-        normed_embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
         # mlm
-        mlm_pred = lm_prediction_scores.contiguous().view(-1, self.config.vocab_size)
+        mlm_pred = lm_prediction_scores.contiguous().view(-1, self.vocab_size)
         mlm_loss = nn.CrossEntropyLoss()(mlm_pred, lm_label.view(-1))
         mlm_accuracy = torch.sum(lm_prediction_scores.argmax(dim=-1).view(-1) == lm_label.view(-1)) / (
                     torch.sum(lm_label.view(-1) > 0) + 1e-12)
         # mlm_loss = torch.log(mlm_loss + 1e-12)
 
         # itm
-        itm_pred = self.newfc_itm_cls(features[:, 0, :])
+        itm_pred = self.newfc_itm_cls(features[:, 0, :]).squeeze()
         loss_itm = nn.BCEWithLogitsLoss()(itm_pred, video_text_match_label)
         itm_accuracy = torch.sum((itm_pred > 0.5).int() == video_text_match_label.int()).float() / \
                        itm_pred.view(-1).shape[0]
