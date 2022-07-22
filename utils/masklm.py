@@ -5,13 +5,13 @@ from transformers import AutoTokenizer
 
 
 class MaskLM(object):
-    def __init__(self, tokenizer_path='bert-base-chinese', mlm_probability=0.15):
-        self.mlm_probability = 0.15
+    def __init__(self, tokenizer_path='bert-base-chinese', mlm_probability=0.25):
+        self.mlm_probability = 0.25
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:
         """
-        Prepare masked tokens inputs/labels for masked language modeling.py: 80% MASK, 10% random, 10% original.
+        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
         labels = inputs.clone()
         # We sample a few tokens in each sequence for MLM training (with probability `self.mlm_probability`)
@@ -42,8 +42,8 @@ class MaskLM(object):
 
 
 class MaskVideo(object):
-    def __init__(self, mlm_probability=0.15):
-        self.mlm_probability = 0.15
+    def __init__(self, mlm_probability=0.25):
+        self.mlm_probability = 0.25
 
     def torch_mask_frames(self, video_feature, video_mask):
         probability_matrix = torch.full(video_mask.shape, 0.9 * self.mlm_probability)

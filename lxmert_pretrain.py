@@ -1,60 +1,31 @@
 import logging
 import os
 import torch
-# import copy
 from tqdm import tqdm
 from lxmert_model import LXMERT
 from config import parse_args
 from data_helper import create_dataloaders
 from utils.util import setup_device, setup_seed, setup_logging, build_optimizer, evaluate
-# from pgd import PGD
-from utils.fgm import FGM
-from utils.ema import EMA
-# from swa import swa
+
 
 def validate(model, val_dataloader):
     model.eval()
-    predictions = []
-    labels = []
-    losses = []
+    mlm_losses, itm_losses = [], []
     with torch.no_grad():
         for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch['frame_input'],batch['frame_mask'],batch['text_input'],batch['text_mask'],batch['label'])
-            loss = loss.mean()
-            predictions.extend(pred_label_id.cpu().numpy())
-            labels.extend(label.cpu().numpy())
-            losses.append(loss.cpu().numpy())
-    loss = sum(losses) / len(losses)
-    results = evaluate(predictions, labels)
-
+            mlm_loss, itm_loss, _, _ = model(batch[0], batch[1], batch[2], batch[3])
+            mlm_losses.append(mlm_loss.mean().to('cpu').item())
+            itm_losses.append(itm_loss.mean().to('cpu').item())
     model.train()
-    return loss, results
+    return sum(mlm_losses)/len(mlm_losses) + sum(itm_losses)/len(itm_losses)
 
 
 def train_and_validate(args):
-    # # 为这个进程指定GPU
-    # torch.cuda.set_device(args.local_rank)
-    # # 初始化GPU通信方式NCLL和参数的获取方式，其中env表示环境变量
-    # # PyTorch实现分布式运算是通过NCLL进行显卡通信的
-    # torch.distributed.init_process_group(
-    #     backend='nccl',
-    #     rank=args.local_rank
-    # )
-
     # 1. load data
-    train_dataloader, val_dataloader = create_dataloaders(args)
+    train_dataloader, val_dataloader = create_dataloaders(args, pretrain=True)
 
     # 2. build model and optimizers
     model = LXMERT(args)
-
-    # swa_raw_model = copy.deepcopy(model)
-
-    ema = EMA(model, 0.999, device=args.device)
-    ema.register()
-
-    # pgd = PGD(model)
-    # K = 3
-    fgm = FGM(model)
 
     num_total_steps = len(train_dataloader) * args.max_epochs
 
@@ -62,23 +33,11 @@ def train_and_validate(args):
     if args.device == 'cuda':
         model = torch.nn.parallel.DataParallel(model.to(args.device))
 
-        # torch.cuda.set_device(args.local_rank)
-        # device = torch.device('cuda', args.local_rank)
-        # model.to(device)
-        # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        # model = torch.nn.parallel.DistributedDataParallel(
-        #     model,
-        #     device_ids=[args.local_rank],
-        #     output_device=args.local_rank,
-        #     find_unused_parameters=True,
-        # )
-        # torch.backends.cudnn.benchmark = True
-        # # 将会让程序在开始时花费一点额外时间，为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速
-        # # DistributedDataParallel可以将不同GPU上求得的梯度进行汇总，实现对模型GPU的更新
-
     # 3. training
     step = 0
     best_score = args.best_score
+    accumulation_steps = 1
+    loss_min = validate(model, val_dataloader)
     # start_time = time.time()
     for epoch in range(args.max_epochs):
 
@@ -86,62 +45,40 @@ def train_and_validate(args):
             _tqdm.set_description('epoch: {}/{}'.format(epoch, args.max_epochs - 1))  # 设置前缀 一般为epoch的信息
             for batch in train_dataloader:
                 model.train()
-                loss, accuracy, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['text_input'],batch['text_mask'], batch['label'])
-                loss = loss.mean()
-                accuracy = accuracy.mean()
+                mlm_loss, itm_loss, mlm_accuracy, itm_accuracy = model(batch[0], batch[1], batch[2], batch[3])
+                mlm_loss = mlm_loss.mean() / accumulation_steps
+                itm_loss = itm_loss.mean() / accumulation_steps
+
+                mlm_accuracy = mlm_accuracy.mean()
+                itm_accuracy = itm_accuracy.mean()
+                loss = 3 * torch.log(mlm_loss + 1e-12) + 0.2 * torch.log(itm_loss + 1e-12)
                 loss.backward()
-
-                '''fgm'''
-                fgm.attack()  # 在embedding上添加对抗扰动
-                adv_loss, _, _, _ = model(batch['frame_input'], batch['frame_mask'], batch['text_input'],batch['text_mask'], batch['label'])
-                adv_loss = adv_loss.mean()
-                adv_loss.backward()  # 反向传播，并在正常的grad基础上，累加对抗训练的梯度
-                fgm.restore()  # 恢复embedding参数
-                '''pgd'''
-                # pgd.backup_grad()
-                # for t in range(K):
-                #     pgd.attack(is_first_attack=(t == 0))
-                #     if t != K - 1:
-                #         model.zero_grad()
-                #     else:
-                #         pgd.restore_grad()
-                #     adv_loss, _, _, _ = model(batch['frame_input'],batch['frame_mask'],batch['text_input'],batch['text_mask'],batch['label'])
-                #     adv_loss = adv_loss.mean()
-                #     adv_loss.backward()
-                # pgd.restore()
-
                 optimizer.step()
-                ema.update()
                 optimizer.zero_grad()
                 scheduler.step()
 
                 step += 1
-                # if step % args.print_steps == 0:
-                #     time_per_step = (time.time() - start_time) / max(1, step)
-                #     remaining_time = time_per_step * (num_total_steps - step)
-                #     remaining_time = time.strftime('%H:%M:%S', time.gmtime(remaining_time))
-                #     logging.info(
-                #         f"Epoch {epoch} step {step} eta {remaining_time}: loss {loss:.3f}, accuracy {accuracy:.3f}")
-                _tqdm.set_postfix(loss='{:.3f}'.format(loss), accuracy='{:.3f}'.format(accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
-                _tqdm.update(1)  # 设置你每一次想让进度条更新的iteration 大小
 
-        ema.apply_shadow()
+                if (step % 3000 == 0):
+                    val_loss = validate(model, val_dataloader)
+                    logging.info(f"Epoch {epoch} step {step}: loss {val_loss:.3f}")
+                    if val_loss < loss_min:
+                        loss_min = val_loss
+                        state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
+                        torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mlm_loss': mlm_loss, 'itm_loss':itm_loss},
+                                   f'{args.savedmodel_path}/pretrain_model_epoch_{epoch}_loss_{loss_min}.bin')
 
-        # 4. validation
-        loss, results = validate(model, val_dataloader)
-        results = {k: round(v, 4) for k, v in results.items()}
-        logging.info(f"Epoch {epoch} step {step}: loss {loss:.3f}, {results}")
+                if step % 10000 == 0:
+                    state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
+                    torch.save(
+                        {'epoch': epoch, 'model_state_dict': state_dict, 'mlm_loss': mlm_loss, 'itm_loss': itm_loss},
+                        f'{args.savedmodel_path}/pretrain_model_pretrain_best_step{step}.bin')
 
-        # 5. save checkpoint
-        mean_f1 = results['mean_f1']
-        if mean_f1 > best_score:
-            best_score = mean_f1
-            state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
-            torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
-                       f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
-        ema.restore()
-    # swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
+                _tqdm.set_postfix(mlm_loss='{:.3f}'.format(mlm_loss), itm_loss='{:.3f}'.format(itm_loss), mlm_acc='{:.3f}'.format(mlm_accuracy), itm_acc='{:.3f}'.format(itm_accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
+                _tqdm.update(1)
 
+
+# swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
 
 
 def main():

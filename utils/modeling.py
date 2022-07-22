@@ -30,8 +30,8 @@ from io import open
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, SmoothL1Loss
-
-from .file_utils import cached_path
+from transformers.models.bert.modeling_bert import BertOnlyMLMHead
+from file_utils import cached_path
 
 logger = logging.getLogger(__name__)
 
@@ -905,44 +905,45 @@ class LXRTPretraining(BertPreTrainedModel):
         self.bert = LXRTModel(config)
 
         # Pre-training heads
-        self.cls = BertPreTrainingHeads(config, self.bert.embeddings.word_embeddings.weight)
+        # self.cls = BertPreTrainingHeads(config, self.bert.embeddings.word_embeddings.weight)
+        self.cls = BertOnlyMLMHead(config)
 
         # Weight initialization
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None,matched_label=None,
-                visual_feats=None):
-        (lang_output, visn_output), pooled_output = self.bert(
-            input_ids, token_type_ids, attention_mask,
-            visual_feats=visual_feats,
+    def forward(self, input_ids, token_type_ids= None, attention_mask=None, visual_feats=None, frame_mask=None):
+        _ , pooled_output = self.bert(
+            input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,visual_feats=visual_feats,
         )
+        frame_len = frame_mask.size()[1]
 
-        lang_prediction_scores, cross_relationship_score = self.cls(lang_output, pooled_output)
+
+        return pooled_output, self.cls(pooled_output)[:, :-frame_len, :]
+        # lang_prediction_scores, cross_relationship_score = self.cls(lang_output, pooled_output)
 
         # This answer_score would not be used anywhere,
         # just to keep a constant return function signature.
-        answer_score = pooled_output[0][0]
 
-        total_loss = 0.
-        loss_fct = CrossEntropyLoss(ignore_index=-1)
-        losses = ()
-        if masked_lm_labels is not None and self.task_mask_lm:
-            masked_lm_loss = loss_fct(
-                lang_prediction_scores.view(-1, self.config.vocab_size),
-                masked_lm_labels.view(-1)
-            )
-            total_loss += masked_lm_loss
-            losses += (masked_lm_loss.detach(),)
+        # total_loss = 0.
+        # loss_fct = CrossEntropyLoss(ignore_index=-1)
+        # losses = ()
+        # if masked_lm_labels is not None and self.task_mask_lm:
+        #     masked_lm_loss = loss_fct(
+        #         lang_prediction_scores.view(-1, self.config.vocab_size),
+        #         masked_lm_labels.view(-1)
+        #     )
+        #     total_loss += masked_lm_loss
+        #     losses += (masked_lm_loss.detach(),)
+        #
+        # if matched_label is not None and self.task_matched:
+        #     matched_loss = loss_fct(
+        #         cross_relationship_score.view(-1, 2),
+        #         matched_label.view(-1)
+        #     )
+        #     total_loss += matched_loss
+        #     losses += (matched_loss.detach(),)
 
-        if matched_label is not None and self.task_matched:
-            matched_loss = loss_fct(
-                cross_relationship_score.view(-1, 2),
-                matched_label.view(-1)
-            )
-            total_loss += matched_loss
-            losses += (matched_loss.detach(),)
-
-        return total_loss, torch.stack(losses).unsqueeze(0), answer_score.detach()
+        # return total_loss, torch.stack(losses).unsqueeze(0)
 
 
 class LXRTFeatureExtraction(BertPreTrainedModel):

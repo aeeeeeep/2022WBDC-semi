@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument('--test_zip_frames', type=str, default='/opt/ml/input/data/zip_frames/test/')
     parser.add_argument('--test_output_csv', type=str, default='/opt/ml/output/result.csv')
     parser.add_argument('--val_ratio', default=0.05, type=float, help='split 10 percentages of training data as validation')
-    parser.add_argument('--batch_size', default=20, type=int, help="use for training duration per worker")
+    parser.add_argument('--batch_size', default=24, type=int, help="use for training duration per worker")
     parser.add_argument('--shuffle', default=True, type=bool)
     parser.add_argument('--val_batch_size', default=10, type=int, help="use for validation duration per worker")
     parser.add_argument('--test_batch_size', default=50, type=int, help="use for testing duration per worker")
@@ -45,7 +45,7 @@ def parse_args():
     # ========================== Title BERT =============================
     parser.add_argument('--bert_dir', type=str, default='opensource_models/chinese-roberta-wwm-ext')
     parser.add_argument('--bert_cache', type=str, default='data/cache')
-    parser.add_argument('--bert_seq_length', type=int, default=256)
+    parser.add_argument('--bert_seq_length', type=int, default=128)
     parser.add_argument('--bert_warmup_steps', type=int, default=5000)
     parser.add_argument('--bert_max_steps', type=int, default=30000)
     parser.add_argument("--bert_hidden_dropout_prob", type=float, default=0.1)

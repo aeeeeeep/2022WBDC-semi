@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import zipfile
 import random
 import zipfile
@@ -27,17 +28,23 @@ class DataLoaderX(DataLoader):
     def __iter__(self):
         return BackgroundGenerator(super().__iter__())
 
-def create_dataloaders(args):
-    dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
-    size = len(dataset)
-    val_size = int(size * args.val_ratio)
-    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size],
-    #                                                            generator=torch.Generator().manual_seed(args.seed))
+def create_dataloaders(args, pretrain=False):
+    if pretrain:
+        dataset = MultiModalDataset(args, args.pretrain_annotation, args.pretrain_zip_feats, test_mode=True)
+        size = len(dataset)
+        val_size = 10000
+        train_dataset, val_dataset = torch.utils.data.dataset.random_split(dataset, [size - val_size, val_size])
+    else:
+        dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
+        size = len(dataset)
+        val_size = int(size * args.val_ratio)
+        # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [size - val_size, val_size],
+        #                                                            generator=torch.Generator().manual_seed(args.seed))
 
-    train_indices, test_indices = train_test_split(list(range(len(dataset.labels))), test_size=args.val_ratio, random_state=2022, stratify=dataset.labels)
-    train_dataset, val_dataset = torch.utils.data.Subset(dataset, train_indices), torch.utils.data.Subset(dataset, test_indices)
-    resample(train_dataset)
-
+        train_indices, test_indices = train_test_split(list(range(len(dataset.labels))), test_size=args.val_ratio,
+                                                       random_state=2022, stratify=dataset.labels)
+        train_dataset, val_dataset = torch.utils.data.Subset(dataset, train_indices), torch.utils.data.Subset(dataset, test_indices)
+        resample(train_dataset)
 
     if args.num_workers > 0:
         dataloader_class = partial(DataLoaderX, pin_memory=True, num_workers=args.num_workers, prefetch_factor=args.prefetch)
@@ -213,6 +220,7 @@ class MultiModalDataset(Dataset):
 
         # Step 2, load title tokens
         title, asr = self.anns[idx]['title'], self.anns[idx]['asr']
+        asr = re.sub('嗯{3,}', '', asr)
         ocr = sorted(self.anns[idx]['ocr'], key=lambda x: x['time'])
         ocr = ','.join([t['text'] for t in ocr])
         text_input, text_mask = self.tokenize_text_tfidf(title, ocr, asr)
@@ -279,4 +287,3 @@ def count_tfidf(str):
 
     featureList = sorted(feature_TFIDF.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
     return featureList
-
