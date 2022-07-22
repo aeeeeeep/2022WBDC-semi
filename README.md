@@ -12,10 +12,10 @@
 * torch 2 onnx 2 trt fp16
 * tfidf
 * AdamW 换 BertAdam
+* 预训练: mlm + itm
 
 ### TODO
 
-* 预训练: mlm + itm
 * 调参
 
 ## [2022中国高校计算机大赛-微信大数据挑战赛](https://algo.weixin.qq.com/)
