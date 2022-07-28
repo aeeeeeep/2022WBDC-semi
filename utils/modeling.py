@@ -144,9 +144,9 @@ class VisualConfig(object):
     VISUAL_LOSSES = ['obj', 'attr', 'feat']
 
     def __init__(self,
-                 l_layers=12,
+                 l_layers=9,
                  x_layers=5,
-                 r_layers=0):
+                 r_layers=5):
         self.l_layers = l_layers
         self.x_layers = x_layers
         self.r_layers = r_layers
@@ -668,14 +668,11 @@ class BertPreTrainingHeads(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
         super(BertPreTrainingHeads, self).__init__()
         self.predictions = BertLMPredictionHead(config, bert_model_embedding_weights)
-        # self.seq_relationship = nn.Linear(config.hidden_size, 2)
+        # self.seq_relationship = nn.Linear(768, 1)
 
-    # def forward(self, sequence_output, pooled_output):
     def forward(self, sequence_output):
-
         prediction_scores = self.predictions(sequence_output)
         # seq_relationship_score = self.seq_relationship(pooled_output)
-        # return prediction_scores, seq_relationship_score
         return prediction_scores
 
 
@@ -926,9 +923,12 @@ class LXRTPretraining(BertPreTrainedModel):
             input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,
             visual_feats=visual_feats,
         )
+        lang_prediction_scores = self.cls(lang_feats)
 
 
-        return lang_feats, self.cls(lang_feats)
+        # return lang_prediction_scores, pooled_output
+        return lang_prediction_scores, pooled_output
+
         # lang_prediction_scores, cross_relationship_score = self.cls(lang_output, pooled_output)
 
         # This answer_score would not be used anywhere,

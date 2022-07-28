@@ -5,8 +5,8 @@ from transformers import AutoTokenizer
 
 
 class MaskLM(object):
-    def __init__(self, tokenizer_path='bert-base-chinese', mlm_probability=0.25):
-        self.mlm_probability = 0.25
+    def __init__(self, tokenizer_path='chinese-roberta-wwm-ext', mlm_probability=0.15):
+        self.mlm_probability = 0.15
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:
@@ -42,8 +42,8 @@ class MaskLM(object):
 
 
 class MaskVideo(object):
-    def __init__(self, mlm_probability=0.25):
-        self.mlm_probability = 0.25
+    def __init__(self, mlm_probability=0.15):
+        self.mlm_probability = 0.15
 
     def torch_mask_frames(self, video_feature, video_mask):
         probability_matrix = torch.full(video_mask.shape, 0.9 * self.mlm_probability)
@@ -69,7 +69,7 @@ class ShuffleVideo(object):
     def torch_shuf_video(self, video_feature):
         bs = video_feature.size()[0]
         # batch 内前一半 video 保持原顺序，后一半 video 逆序
-        shuf_index = torch.tensor(list(range(bs // 2)) + list(range(bs // 2, bs))[::-1])
+        shuf_index = torch.tensor(list(range(bs // 2)) + list(range(bs //2, bs))[::-1])
         # shuf 后的 label
         label = (torch.tensor(list(range(bs))) == shuf_index).float()
         video_feature = video_feature[shuf_index]

@@ -19,12 +19,16 @@ def validate(model, val_dataloader):
     labels = []
     losses = []
     with torch.no_grad():
-        for batch in val_dataloader:
-            loss, _, pred_label_id, label = model(batch[0], batch[1], batch[2], batch[3], batch[4])
-            loss = loss.mean()
-            predictions.extend(pred_label_id.cpu().numpy())
-            labels.extend(label.cpu().numpy())
-            losses.append(loss.cpu().numpy())
+        with tqdm(total=len(val_dataloader)) as _tqdm:  # 使用需要的参数对tqdm进行初始化
+            _tqdm.set_description('Verify: ')
+            for batch in val_dataloader:
+                loss, _, pred_label_id, label = model(batch[0], batch[1], batch[2], batch[3], batch[4])
+                loss = loss.mean()
+                predictions.extend(pred_label_id.cpu().numpy())
+                labels.extend(label.cpu().numpy())
+                losses.append(loss.cpu().numpy())
+                _tqdm.set_postfix(loss='{:.3f}'.format(loss))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
+                _tqdm.update(1)  # 设置你每一次想让进度条更新的iteration 大小
     loss = sum(losses) / len(losses)
     results = evaluate(predictions, labels)
 
@@ -38,6 +42,8 @@ def train_and_validate(args):
 
     # 2. build model and optimizers
     model = LXMERT(args)
+    model.load_state_dict(torch.load('./pretrain/v1/pretrain_model_epoch_1_loss_0.2387.bin')['model_state_dict'],
+                          strict=False)
 
     # swa_raw_model = copy.deepcopy(model)
 
@@ -94,8 +100,8 @@ def train_and_validate(args):
                 scheduler.step()
 
                 step += 1
-                # if step > 3:
-                #     break
+                if step > 3:
+                    break
                 # if step % args.print_steps == 0:
                 #     time_per_step = (time.time() - start_time) / max(1, step)
                 #     remaining_time = time_per_step * (num_total_steps - step)
@@ -114,7 +120,8 @@ def train_and_validate(args):
                         torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
                                    f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
 
-                _tqdm.set_postfix(loss='{:.3f}'.format(loss),accuracy='{:.3f}'.format(accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
+                _tqdm.set_postfix(loss='{:.3f}'.format(loss),
+                                  accuracy='{:.3f}'.format(accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
                 _tqdm.update(1)  # 设置你每一次想让进度条更新的iteration 大小
 
         ema.apply_shadow()
@@ -132,7 +139,6 @@ def train_and_validate(args):
             torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mean_f1': mean_f1},
                        f'{args.savedmodel_path}/model_epoch_{epoch}_mean_f1_{mean_f1}.bin')
         ema.restore()
-
 
 
 # swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)

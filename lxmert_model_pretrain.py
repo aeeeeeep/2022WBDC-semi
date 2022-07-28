@@ -13,6 +13,7 @@ from utils.masklm import MaskLM, MaskVideo, ShuffleVideo
 from utils.modeling import LXRTEncoder, LXRTModel, LXRTFeatureExtraction, LXRTPretraining
 from category_id_map import CATEGORY_ID_LIST
 
+
 class LXMERT_PRE(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -38,10 +39,7 @@ class LXMERT_PRE(nn.Module):
                                                        task_mask_lm=True,
                                                        )
 
-
-
     def forward(self, frame_input, frame_mask, text_input, text_mask):
-        loss, pred = 0, None
         with torch.no_grad():
             frame_inputs = self.visual_backbone(frame_input)
         frame_fea = self.video_dense(frame_inputs)
@@ -56,29 +54,28 @@ class LXMERT_PRE(nn.Module):
         frame_feature = input_feature.to(frame_fea.device)
         video_text_match_label = video_text_match_label.to(frame_feature.device)
 
-        features, lm_prediction_scores = self.encoder(input_ids=text_input_ids,
-                                                      token_type_ids=None,
-                                                      attention_mask=text_mask,
-                                                      frame_mask=frame_mask,
-                                                      visual_feats=frame_fea
-                                                      )
+        lm_prediction_scores, pooled_output = self.encoder(input_ids=text_input_ids,
+                                                           token_type_ids=None,
+                                                           attention_mask=text_mask,
+                                                           frame_mask=frame_mask,
+                                                           visual_feats=frame_feature
+                                                           )
 
         # mlm
         mlm_pred = lm_prediction_scores.contiguous().view(-1, self.vocab_size)
         mlm_loss = nn.CrossEntropyLoss()(mlm_pred, lm_label.view(-1))
         mlm_accuracy = torch.sum(lm_prediction_scores.argmax(dim=-1).view(-1) == lm_label.view(-1)) / (
-                    torch.sum(lm_label.view(-1) > 0) + 1e-12)
+                torch.sum(lm_label.view(-1) > 0) + 1e-12)
         # mlm_loss = torch.log(mlm_loss + 1e-12)
 
         # itm
-        itm_pred = self.newfc_itm_cls(features[:, 0, :]).squeeze()
-        loss_itm = nn.BCEWithLogitsLoss()(itm_pred, video_text_match_label)
-        itm_accuracy = torch.sum((itm_pred > 0.5).int() == video_text_match_label.int()).float() / \
+        itm_pred = self.newfc_itm_cls(pooled_output).view(-1)
+        loss_itm = nn.BCEWithLogitsLoss(pos_weight=torch.ones(20).cuda())(itm_pred.view(-1), video_text_match_label.view(-1))
+        itm_accuracy = torch.sum((itm_pred.view(-1) > 0.5).int() == video_text_match_label.view(-1).int()).float() / \
                        itm_pred.view(-1).shape[0]
         # loss_itm += torch.log(loss_itm + 1e-12)
 
         return mlm_loss, loss_itm, mlm_accuracy, itm_accuracy
-
 
 
 
