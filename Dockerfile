@@ -1,14 +1,6 @@
-FROM tione-wxdsj.tencentcloudcr.com/base/pytorch:py38-torch1.9.0-cu111-trt8.2.5
+FROM ccr.ccs.tencentyun.com/ti_containers/pytorch:1.9.1-gpu-cu111-py38
 
 WORKDIR /opt/ml/wxcode
 
-COPY ./requirements.txt ./
+COPY ./ ./
 RUN pip install -r requirements.txt -i https://mirrors.cloud.tencent.com/pypi/simple
-
-COPY ./save/model.trt.engine ./model.trt.engine
-COPY ./opensource_models/chinese-roberta-wwm-ext/ ./opensource_models/chinese-roberta-wwm-ext/
-COPY ./utils/*.py ./utils/
-COPY ./*.py ./
-COPY ./start.sh ./
-
-CMD sh -c "sh start.sh"

@@ -1,5 +1,7 @@
 # %%writefile data/masklm.py
 import torch
+import random
+# import numpy as np
 from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
 from transformers import AutoTokenizer
 
@@ -68,8 +70,8 @@ class ShuffleVideo(object):
 
     def torch_shuf_video(self, video_feature):
         bs = video_feature.size()[0]
-        # batch 内前一半 video 保持原顺序，后一半 video 逆序
-        shuf_index = torch.tensor(list(range(bs // 2)) + list(range(bs //2, bs))[::-1])
+        # batch 内前一半 video 保持原顺序, 后一半 video 逆序
+        shuf_index = torch.tensor(list(range(bs // 2)) + list(range(bs // 2, bs))[::-1])
         # shuf 后的 label
         label = (torch.tensor(list(range(bs))) == shuf_index).float()
         video_feature = video_feature[shuf_index]

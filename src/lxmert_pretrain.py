@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 import logging
 import os
 import torch
@@ -17,7 +19,7 @@ def validate(model, val_dataloader):
             mlm_losses.append(mlm_loss.mean().to('cpu').item())
             itm_losses.append(itm_loss.mean().to('cpu').item())
     model.train()
-    return sum(mlm_losses)/len(mlm_losses) + sum(itm_losses)/len(itm_losses)
+    return sum(mlm_losses) / len(mlm_losses) + sum(itm_losses) / len(itm_losses)
 
 
 def train_and_validate(args):
@@ -42,7 +44,9 @@ def train_and_validate(args):
 
     # start_time = time.time()
     for epoch in range(args.max_epochs):
-
+        if epoch != 0:
+            print("仅用于复现的预训练已训练完成")
+            exit()
         with tqdm(total=len(train_dataloader)) as _tqdm:  # 使用需要的参数对tqdm进行初始化
             _tqdm.set_description('epoch: {}/{}'.format(epoch, args.max_epochs - 1))  # 设置前缀 一般为epoch的信息
             for batch in train_dataloader:
@@ -56,7 +60,7 @@ def train_and_validate(args):
                 itm_accuracy = itm_accuracy.mean()
                 # loss = 3 * torch.log(mlm_loss + 1e-12) + 0.2 * torch.log(itm_loss + 1e-12)
                 # loss = torch.log(mlm_loss + 1e-12) + torch.log(itm_loss + 1e-12)
-                loss = mlm_loss + itm_loss + 1e-12
+                loss = mlm_loss + 0.3 * itm_loss
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -70,21 +74,23 @@ def train_and_validate(args):
                     if val_loss < loss_min:
                         loss_min = val_loss
                         state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
-                        torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mlm_loss': mlm_loss, 'itm_loss':itm_loss},
+                        torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mlm_loss': mlm_loss,
+                                    'itm_loss': itm_loss},
                                    f'{args.savedpremodel_path}/pretrain_model_epoch_{epoch}_loss_{loss_min}.bin')
 
-                if step % 10000 == 0:
-                    state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
-                    torch.save(
-                        {'epoch': epoch, 'model_state_dict': state_dict, 'mlm_loss': mlm_loss, 'itm_loss': itm_loss},
-                        f'{args.savedpremodel_path}/pretrain_model_pretrain_best_step{step}.bin')
-
-                _tqdm.set_postfix(mlm_loss='{:.3f}'.format(mlm_loss), itm_loss='{:.3f}'.format(itm_loss), mlm_acc='{:.3f}'.format(mlm_accuracy), itm_acc='{:.3f}'.format(itm_accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
+                _tqdm.set_postfix(mlm_loss='{:.3f}'.format(mlm_loss), itm_loss='{:.3f}'.format(itm_loss),
+                                  mlm_acc='{:.3f}'.format(mlm_accuracy),
+                                  itm_acc='{:.3f}'.format(itm_accuracy))  # 设置你想要在本次循环内实时监视的变量  可以作为后缀打印出来
                 _tqdm.update(1)
 
-
-# swa(swa_raw_model, args.swa_savedmodel_path, swa_start=args.swa_start)
-
+        val_loss = validate(model, val_dataloader)
+        logging.info(f"Epoch {epoch} step {step}: loss {val_loss:.3f}")
+        if val_loss < loss_min:
+            loss_min = val_loss
+            state_dict = model.module.state_dict() if args.device == 'cuda' else model.state_dict()
+            torch.save({'epoch': epoch, 'model_state_dict': state_dict, 'mlm_loss': mlm_loss,
+                        'itm_loss': itm_loss},
+                       f'{args.savedpremodel_path}/pretrain_model.bin')
 
 def main():
     args = parse_args()

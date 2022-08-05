@@ -29,9 +29,7 @@ from io import open
 
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss, SmoothL1Loss
-
-from .file_utils import cached_path
+from src.utils.file_utils import cached_path
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +46,7 @@ CONFIG_NAME = 'config.json'
 WEIGHTS_NAME = 'pytorch_model.bin'
 TF_WEIGHTS_NAME = 'model.ckpt'
 
+
 def load_tf_weights_in_bert(model, tf_checkpoint_path):
     """ Load tf checkpoints in a pytorch model
     """
@@ -57,7 +56,7 @@ def load_tf_weights_in_bert(model, tf_checkpoint_path):
         import tensorflow as tf
     except Importtokenization:
         print("Loading a TensorFlow models in PyTorch, requires TensorFlow to be installed. Please see "
-            "https://www.tensorflow.org/install/ for installation instructions.")
+              "https://www.tensorflow.org/install/ for installation instructions.")
         raise
     tf_path = os.path.abspath(tf_checkpoint_path)
     print("Converting TensorFlow checkpoint from {}".format(tf_path))
@@ -124,6 +123,7 @@ class GeLU(nn.Module):
         0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
         Also see https://arxiv.org/abs/1606.08415
     """
+
     def __init__(self):
         super().__init__()
 
@@ -140,6 +140,7 @@ ACT2FN = {"gelu": gelu, "relu": torch.nn.functional.relu, "swish": swish}
 
 class VisualConfig(object):
     VISUAL_LOSSES = ['obj', 'attr', 'feat']
+
     def __init__(self,
                  l_layers=12,
                  x_layers=5,
@@ -156,9 +157,9 @@ class VisualConfig(object):
 
         self.visual_losses = self.VISUAL_LOSSES
         self.visual_loss_config = {
-            'obj': (self.obj_id_num, 'ce', (-1,), 1/0.15),
-            'attr': (self.attr_id_num, 'ce', (-1,), 1/0.15),
-            'feat': (2048, 'l2', (-1, 2048), 1/0.15),
+            'obj': (self.obj_id_num, 'ce', (-1,), 1 / 0.15),
+            'attr': (self.attr_id_num, 'ce', (-1,), 1 / 0.15),
+            'feat': (2048, 'l2', (-1, 2048), 1 / 0.15),
         }
 
     def set_visual_dims(self, feat_dim, pos_dim):
@@ -172,6 +173,7 @@ VISUAL_CONFIG = VisualConfig()
 class BertConfig(object):
     """Configuration class to store the configuration of a `BertModel`.
     """
+
     def __init__(self,
                  vocab_size_or_config_json_file,
                  hidden_size=768,
@@ -209,7 +211,7 @@ class BertConfig(object):
                 initializing all weight matrices.
         """
         if isinstance(vocab_size_or_config_json_file, str) or (sys.version_info[0] == 2
-                        and isinstance(vocab_size_or_config_json_file, unicode)):
+                                                               and isinstance(vocab_size_or_config_json_file, unicode)):
             with open(vocab_size_or_config_json_file, "r", encoding='utf-8') as reader:
                 json_config = json.loads(reader.read())
             for key, value in json_config.items():
@@ -264,6 +266,7 @@ BertLayerNorm = torch.nn.LayerNorm
 class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
+
     def __init__(self, config):
         super(BertEmbeddings, self).__init__()
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
@@ -305,7 +308,7 @@ class BertAttention(nn.Module):
 
         # visual_dim = 2048
         if ctx_dim is None:
-            ctx_dim =config.hidden_size
+            ctx_dim = config.hidden_size
         self.query = nn.Linear(config.hidden_size, self.all_head_size)
         self.key = nn.Linear(ctx_dim, self.all_head_size)
         self.value = nn.Linear(ctx_dim, self.all_head_size)
@@ -475,7 +478,7 @@ class LXRTXLayer(nn.Module):
         return lang_output, visn_output
 
     def forward(self, lang_feats, lang_attention_mask,
-                      visn_feats, visn_attention_mask):
+                visn_feats, visn_attention_mask):
         lang_att_output = lang_feats
         visn_att_output = visn_feats
 
@@ -542,7 +545,6 @@ class LXRTEncoder(nn.Module):
         self.r_layers = nn.ModuleList(
             [BertLayer(config) for _ in range(self.num_r_layers)]
         )
-
 
     def forward(self, lang_feats, lang_attention_mask,
                 visn_feats, visn_attention_mask=None):
@@ -664,18 +666,19 @@ class BertPreTrainingHeads(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
         super(BertPreTrainingHeads, self).__init__()
         self.predictions = BertLMPredictionHead(config, bert_model_embedding_weights)
-        self.seq_relationship = nn.Linear(config.hidden_size, 2)
+        # self.seq_relationship = nn.Linear(768, 1)
 
-    def forward(self, sequence_output, pooled_output):
+    def forward(self, sequence_output):
         prediction_scores = self.predictions(sequence_output)
-        seq_relationship_score = self.seq_relationship(pooled_output)
-        return prediction_scores, seq_relationship_score
+        # seq_relationship_score = self.seq_relationship(pooled_output)
+        return prediction_scores
 
 
 class BertPreTrainedModel(nn.Module):
     """ An abstract class to handle weights initialization and
         a simple interface for dowloading and loading pretrained models.
     """
+
     def __init__(self, config, *inputs, **kwargs):
         super(BertPreTrainedModel, self).__init__()
         if not isinstance(config, BertConfig):
@@ -739,7 +742,7 @@ class BertPreTrainedModel(nn.Module):
         except EnvironmentError:
             if pretrained_model_name_or_path == 'bert-base-uncased':
                 try:
-                    print("The BERT-weight-downloading query to AWS was time-out;" 
+                    print("The BERT-weight-downloading query to AWS was time-out;"
                           "trying to download from UNC servers")
                     archive_file = "https://nlp.cs.unc.edu/data/bert/bert-base-uncased.tar.gz"
                     resolved_archive_file = cached_path(archive_file, cache_dir=cache_dir)
@@ -749,12 +752,12 @@ class BertPreTrainedModel(nn.Module):
                     return None
             else:
                 logger.error(
-                        "Model name '{}' was not found in model name list ({}). "
-                        "We assumed '{}' was a path or url but couldn't find any file "
-                        "associated to this path or url.".format(
-                            pretrained_model_name_or_path,
-                            ', '.join(PRETRAINED_MODEL_ARCHIVE_MAP.keys()),
-                            archive_file))
+                    "Model name '{}' was not found in model name list ({}). "
+                    "We assumed '{}' was a path or url but couldn't find any file "
+                    "associated to this path or url.".format(
+                        pretrained_model_name_or_path,
+                        ', '.join(PRETRAINED_MODEL_ARCHIVE_MAP.keys()),
+                        archive_file))
         if resolved_archive_file == archive_file:
             logger.info("loading archive file {}".format(archive_file))
         else:
@@ -818,6 +821,7 @@ class BertPreTrainedModel(nn.Module):
             for name, child in module._modules.items():
                 if child is not None:
                     load(child, prefix + name + '.')
+
         start_prefix = ''
         if not hasattr(model, 'bert') and any(s.startswith('bert.') for s in state_dict.keys()):
             start_prefix = 'bert.'
@@ -830,7 +834,7 @@ class BertPreTrainedModel(nn.Module):
         #         model.__class__.__name__, unexpected_keys))
         if len(error_msgs) > 0:
             raise RuntimeError('Error(s) in loading state_dict for {}:\n\t{}'.format(
-                               model.__class__.__name__, "\n\t".join(error_msgs)))
+                model.__class__.__name__, "\n\t".join(error_msgs)))
         return model
 
 
@@ -885,7 +889,7 @@ class LXRTModel(BertPreTrainedModel):
             visn_attention_mask=extended_visual_attention_mask)
         pooled_output = self.pooler(lang_feats)
 
-        return pooled_output
+        return (lang_feats, visn_feats), pooled_output
 
 
 class LXRTPretraining(BertPreTrainedModel):
@@ -907,49 +911,54 @@ class LXRTPretraining(BertPreTrainedModel):
 
         # Pre-training heads
         self.cls = BertPreTrainingHeads(config, self.bert.embeddings.word_embeddings.weight)
+        # self.cls = BertPreTrainingHeads(config)
 
         # Weight initialization
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None,matched_label=None,
-                visual_feats=None):
-        (lang_output, visn_output), pooled_output = self.bert(
-            input_ids, token_type_ids, attention_mask,
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, visual_feats=None, frame_mask=None):
+        (lang_feats, visn_feats), pooled_output = self.bert(
+            input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,
             visual_feats=visual_feats,
         )
+        lang_prediction_scores = self.cls(lang_feats)
 
-        lang_prediction_scores, cross_relationship_score = self.cls(lang_output, pooled_output)
+
+        # return lang_prediction_scores, pooled_output
+        return lang_prediction_scores, pooled_output
+
+        # lang_prediction_scores, cross_relationship_score = self.cls(lang_output, pooled_output)
 
         # This answer_score would not be used anywhere,
         # just to keep a constant return function signature.
-        answer_score = pooled_output[0][0]
 
-        total_loss = 0.
-        loss_fct = CrossEntropyLoss(ignore_index=-1)
-        losses = ()
-        if masked_lm_labels is not None and self.task_mask_lm:
-            masked_lm_loss = loss_fct(
-                lang_prediction_scores.view(-1, self.config.vocab_size),
-                masked_lm_labels.view(-1)
-            )
-            total_loss += masked_lm_loss
-            losses += (masked_lm_loss.detach(),)
+        # total_loss = 0.
+        # loss_fct = CrossEntropyLoss(ignore_index=-1)
+        # losses = ()
+        # if masked_lm_labels is not None and self.task_mask_lm:
+        #     masked_lm_loss = loss_fct(
+        #         lang_prediction_scores.view(-1, self.config.vocab_size),
+        #         masked_lm_labels.view(-1)
+        #     )
+        #     total_loss += masked_lm_loss
+        #     losses += (masked_lm_loss.detach(),)
+        #
+        # if matched_label is not None and self.task_matched:
+        #     matched_loss = loss_fct(
+        #         cross_relationship_score.view(-1, 2),
+        #         matched_label.view(-1)
+        #     )
+        #     total_loss += matched_loss
+        #     losses += (matched_loss.detach(),)
 
-        if matched_label is not None and self.task_matched:
-            matched_loss = loss_fct(
-                cross_relationship_score.view(-1, 2),
-                matched_label.view(-1)
-            )
-            total_loss += matched_loss
-            losses += (matched_loss.detach(),)
-
-        return total_loss, torch.stack(losses).unsqueeze(0), answer_score.detach()
+        # return total_loss, torch.stack(losses).unsqueeze(0)
 
 
 class LXRTFeatureExtraction(BertPreTrainedModel):
     """
     BERT model for classification.
     """
+
     def __init__(self, config, mode='x'):
         """
 

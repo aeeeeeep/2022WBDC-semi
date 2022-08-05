@@ -8,6 +8,7 @@ from datetime import timedelta
 import time
 import logging
 
+
 def get_model_path_list(base_dir):
     """
     从文件夹中获取 model.bin 的路径
@@ -22,9 +23,10 @@ def get_model_path_list(base_dir):
     model_lists = sorted(model_lists)
     return model_lists
 
+
 def swa(model, model_dir, swa_start=3):
     """
-    swa 滑动平均模型，一般在训练平稳阶段再使用 SWA
+    swa 滑动平均模型, 一般在训练平稳阶段再使用 SWA
     """
     model_path_list = get_model_path_list(model_dir)
 
@@ -32,12 +34,14 @@ def swa(model, model_dir, swa_start=3):
         f'Using swa, swa start should smaller than {len(model_path_list) - 1} and bigger than 0'
 
     swa_model = copy.deepcopy(model)
+    swa_model = torch.nn.parallel.DataParallel(swa_model)
     swa_n = 0.
 
     with torch.no_grad():
         for _ckpt in model_path_list[swa_start:]:
             logging.info(f'Load model from {_ckpt}')
-            model.load_state_dict(torch.load(_ckpt, map_location=torch.device('cpu')))
+            model = torch.nn.parallel.DataParallel(model)
+            model.load_state_dict(torch.load(model_path))
             tmp_para_dict = dict(model.named_parameters())
 
             alpha = 1. / (swa_n + 1.)

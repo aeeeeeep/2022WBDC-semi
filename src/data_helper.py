@@ -32,7 +32,7 @@ def create_dataloaders(args, pretrain=False):
     if pretrain:
         dataset = MultiModalDataset(args, args.pretrain_annotation, args.pretrain_zip_frames, test_mode=True)
         size = len(dataset)
-        val_size = 10000
+        val_size = 5000
         train_dataset, val_dataset = torch.utils.data.dataset.random_split(dataset, [size - val_size, val_size])
     else:
         dataset = MultiModalDataset(args, args.train_annotation, args.train_zip_frames)
@@ -124,20 +124,28 @@ class MultiModalDataset(Dataset):
         if num_frames <= self.max_frame:
             # load all frame
             select_inds = list(range(num_frames))
+        elif num_frames <= 24:
+            # step = num_frames // self.max_frame
+            select_inds = list(range(0, num_frames, 1))
+            select_inds = select_inds[:self.max_frame]
         else:
             # if the number of frames exceeds the limitation, we need to sample
             # the frames.
-            if self.test_mode:
-                # uniformly sample when test mode is True
-                step = num_frames // self.max_frame
-                select_inds = list(range(0, num_frames, step))
-                select_inds = select_inds[:self.max_frame]
-            else:
-                # randomly sample when test mode is False
-                select_inds = list(range(num_frames))
-                random.shuffle(select_inds)
-                select_inds = select_inds[:self.max_frame]
-                select_inds = sorted(select_inds)
+            # if self.test_mode:
+            #     # uniformly sample when test mode is True
+            step = num_frames // self.max_frame
+            select_inds = list(range(0, num_frames, step))
+            select_inds = select_inds[:self.max_frame]
+            # else:
+            #     # randomly sample when test mode is False
+            #     select_inds = list(range(num_frames))
+            #     random.shuffle(select_inds)
+            #     select_inds = select_inds[:self.max_frame]
+            #     select_inds = sorted(select_inds)
+            # randomly sample when test mode is False
+            # select_inds = list(range(0, int(num_frames / 2),2)) + list(range(int(num_frames / 2 + 1), num_frames,num_frames // 9))
+            # select_inds = select_inds[:self.max_frame]
+
         for i, j in enumerate(select_inds):
             mask[i] = 1
             img_content = handler.read(namelist[j])
@@ -176,8 +184,6 @@ class MultiModalDataset(Dataset):
     def tokenize_text_tfidf(self, title: str, ocr_text: str, asr_text: str) -> tuple:
         max_len = 128
         tfidf_str_title = ''
-        tfidf_str_ocr = ''
-        tfidf_str_asr = ''
 
         if len(title)<2:
             tfidf_str_title = ''
@@ -198,8 +204,8 @@ class MultiModalDataset(Dataset):
             asr_text = asr_text[:(int(max_len / 2))] + asr_text[-(int(max_len / 2)):]
 
         encoded_title = self.tokenizer(tfidf_str_title, max_length=max_len, padding='max_length', truncation=True)
-        encoded_ocr = self.tokenizer(tfidf_str_ocr, max_length=max_len, padding='max_length', truncation=True)
-        encoded_asr = self.tokenizer(tfidf_str_asr, max_length=max_len, padding='max_length', truncation=True)
+        encoded_ocr = self.tokenizer(ocr_text, max_length=max_len, padding='max_length', truncation=True)
+        encoded_asr = self.tokenizer(asr_text, max_length=max_len, padding='max_length', truncation=True)
 
         text_input_ids = torch.LongTensor(
             [self.tokenizer.cls_token_id] + encoded_title['input_ids'] + [self.tokenizer.sep_token_id]
@@ -250,11 +256,11 @@ def resample(dataset):
     indices_resample = []
     for idx in indices:
         if label_cnt[anns[idx]['category_id']] < 100:
-            indices_resample.extend([idx] * 4)
+            indices_resample.extend([idx] * 5)
         elif label_cnt[anns[idx]['category_id']] < 500:
+            indices_resample.extend([idx] * 3)
+        elif label_cnt[anns[idx]['category_id']] < 1000:
             indices_resample.extend([idx] * 2)
-        # elif label_cnt[anns[idx]['category_id']] < 1000:
-        #     indices_resample.extend([idx] * 2)
         else:
             indices_resample.append(idx)
 
@@ -269,7 +275,7 @@ def count_tfidf(str):
         document = ["".join(sent0) for sent0 in sent_words]
         tfidf_model = TfidfVectorizer(analyzer="word", token_pattern=r"(?u)\b\w+\b",
                                       stop_words=["是", "的", "嗯", "呀"]).fit(document)
-        feature = tfidf_model.get_feature_names()
+        feature = tfidf_model.get_feature_names_out()
         # 每一行指定特征的tf-idf值
         sparse_result = tfidf_model.transform(document)
         weight = sparse_result.toarray()

@@ -66,10 +66,10 @@ class RawFrameDataset(Dataset):
 
 def parse_args():
     parser = argparse.ArgumentParser("Visual feature extraction")
-    parser.add_argument('--zip_frame_dir', type=str, default='/home/tione/notebook/data/zip_frames/labeled/')
-    parser.add_argument('--ann_path', type=str, default='/home/tione/notebook/data/annotations/labeled.json')
-    parser.add_argument('--swin_pretrained', type=str, default='opensource_models/swin_tiny_patch4_window7_224.pth')
-    parser.add_argument('--output_path', type=str, default='/home/tione/notebook/data/zip_feats/labeled.zip')
+    parser.add_argument('--zip_frame_dir', type=str, default='/opt/ml/input/data//zip_frames/labeled/')
+    parser.add_argument('--ann_path', type=str, default='/opt/ml/input/data//annotations/labeled.json')
+    parser.add_argument('--swin_pretrained', type=str, default='../../opensource_models/swin_tiny_patch4_window7_224.pth')
+    parser.add_argument('--output_path', type=str, default='/opt/ml/input/data//zip_feats/labeled.zip')
     args = parser.parse_args()
     return args
 

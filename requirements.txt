@@ -6,3 +6,6 @@ timm
 transformers>=4.0.0
 prefetch_generator
 jieba
+prefetch_generator
+boto3
+botocore

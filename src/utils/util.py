@@ -4,10 +4,10 @@ import random
 import numpy as np
 from sklearn.metrics import f1_score, accuracy_score
 import torch
-from transformers import AdamW, get_cosine_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
 
-from utils.optimization import BertAdam
-from category_id_map import lv2id_to_lv1id
+from src.utils.optimization import BertAdam
+from src.category_id_map import lv2id_to_lv1id
 
 
 def setup_device(args):
@@ -40,7 +40,7 @@ def build_optimizer(args, model, train_optimi_step):
     ]
     optimizer = BertAdam(optimizer_grouped_parameters, lr=args.learning_rate, warmup=0.1, t_total=train_optimi_step)
     # optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps,
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps,
                                                 num_training_steps=train_optimi_step)
     return optimizer, scheduler
 

@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 import json
 import torch
 import torch.nn as nn
@@ -69,8 +71,8 @@ class LXMERT_PRE(nn.Module):
         # mlm_loss = torch.log(mlm_loss + 1e-12)
 
         # itm
-        itm_pred = self.newfc_itm_cls(pooled_output).view(-1)
-        loss_itm = nn.BCEWithLogitsLoss(pos_weight=torch.ones(20).cuda())(itm_pred.view(-1), video_text_match_label.view(-1))
+        itm_pred = self.newfc_itm_cls(pooled_output)
+        loss_itm = nn.BCEWithLogitsLoss()(itm_pred.view(-1), video_text_match_label.view(-1))
         itm_accuracy = torch.sum((itm_pred.view(-1) > 0.5).int() == video_text_match_label.view(-1).int()).float() / \
                        itm_pred.view(-1).shape[0]
         # loss_itm += torch.log(loss_itm + 1e-12)
