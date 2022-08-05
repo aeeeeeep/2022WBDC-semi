@@ -71,7 +71,7 @@ bash inference.sh   # 模型测试脚本
 
 最后将处理后的文本特征和视频特征经过5层`Cross-Modality Encoder`后得到三个多模态输出。
 
-![figure1](picture/figure1)
+![figure1](https://github.com/aeeeeeep/wbdc2022-semi/blob/main/picture/figure1.png)
 
 ### 数据预处理
 
