@@ -1,5 +1,3 @@
-# 代码说明
-
 ## 训练时间
 
 预训练: 8h
@@ -134,6 +132,8 @@ https://huggingface.co/hfl/chinese-roberta-wwm-ext/tree/main
 ## 模型复赛B榜在线结果
 
 得分: *0.678031*
+
+排名: 72
 
 ## 开源预训练模型
 
