@@ -140,5 +140,3 @@ https://huggingface.co/hfl/chinese-roberta-wwm-ext/tree/main
 swin_tiny_patch4_window7_224: 比赛方提供
 
 chinese-roberta-wwm-ext: https://huggingface.co/hfl/chinese-roberta-wwm-ext/tree/main
-
-[![Security Status](https://www.murphysec.com/platform3/v3/badge/1610998808142446592.svg?t=1)](https://www.murphysec.com/accept?code=b1f8cb8fda1f9d090cd7a257f034ac05&type=1&from=2&t=2)
